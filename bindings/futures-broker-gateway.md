@@ -42,21 +42,37 @@
 - **共享面**（改这些要跑全部域）：`main.py`、`settings.py`、`logging_config.py`、`pyproject.toml`、
   `alembic_metadata.py`；
 - **静态腿**（不触库的秒级闸，清单是工程数据）：见机读块；
-- **复杂度闸（本工程必须用 radon）**：口径 = **相对基线不退化**（ratchet），
-  工具 `radon`（**已写进本仓 dev 依赖**：`pyproject.toml` 的 `[dependency-groups] dev`
-  ＋ `uv.lock`），判据在 `coordinator/tools/complexity.py`。
-  - **判什么**：本分支相对**分叉点**（`merge-base(origin/main, HEAD)`）新增或变差的块。
-    新增/变差到 **C 级及以上 ⇒ BLOCK**；**B 级 ⇒ WARN**；变小或消失不判。
-  - **为什么不是绝对阈值**：实测本仓存量（316 文件／3802 块）
-    **A 3280／B 362／C 134／D 22／E 3／F 1**——"不许有 C"会把 ~160 个存量块当场染红，
-    闸立刻变噪声被绕过（**假红比没闸更坏**）。存量债走重构条目，不靠闸宣布。
-  - **判哪些路径**：`auth`、`broker_gateway`、`data_access`、`dfs`、`main`、`notification`、
-    `scripts`、`settings.py`、`main.py`（见机读块）。**不含 `tests/`**——测试的复杂度口径另说。
-  - **在哪儿跑**：**分支侧**（dev／TL 在自己的 worktree 里跑 `tools/gate.py`，证据入档）。
-    ⚠ **别在共享主检出里跑**：那里未提交面是**所有人**的在途改动，ratchet 会把别人的账
-    算到你头上（实测首跑就逮到另一会话在途的新增 C 级函数）。
-  - **缺 radon 即红**：声明了就得跑，radon 不在目标仓解释器里 ⇒ 腿退出 2 ⇒ 门禁红
-    （`--no-complexity` 是显式逃生口，证据里会少一条腿，评审看得见）。
+- **复杂度闸（本工程必须用 radon）**：工具 `radon`（**已在本仓 dev 依赖**：
+  `pyproject.toml` 的 `[dependency-groups] dev` ＋ `uv.lock`），判据在
+  `coordinator/tools/complexity.py`。
+- **与工程侧 C20 的分工（两层，不是两套）**：
+
+  | 层 | 谁 | 判什么 | 级别 |
+  |---|---|---|---|
+  | **存量台账** | 工程侧 `process_audit` 的 **C20** | 绝对阈值（CC ≥ 21、MI < 20）＋**冻结基线清单**（只减不增） | **报黄留痕**（不阻断） |
+  | **新增闸** | 本体系 `tools/complexity.py`（门禁一条腿） | **相对分叉点不退化**：新增／变差到 C 以上 | **BLOCK** |
+
+  一句话：**C20 是账本（存量有多大、谁在还），ratchet 是闸（不许再欠）**。
+  两者**扫描面必须同一处**（见下），否则同一个函数一边黄一边绿。
+- **扫描面 ＝ 生产面（对齐 C20 的 `RADON_SCAN_DIRS` ＋ `RADON_SCAN_FILES`）**：
+  `auth`、`broker_gateway`、`data_access`、`notification`、`main`、`dfs`、
+  `main.py`、`settings.py`、`logging_config.py`、`executors.py`。
+  **不含** `tests/`·`research/`·**`scripts/`**——测试函数天然多分支、探针是一次性件，
+  拉进来只会淹没有效信号（实测：全仓最烂的块全在 `scripts/ops/*`，F=61）。
+  这条一致性由 `tests/test_complexity.py` 的同步闸钉住（读 C20 源码常量比对，对不上即红）。
+- **口径**：本分支相对**分叉点**（`merge-base(origin/main, HEAD)`）新增或变差的块 ⇒
+  **C 级及以上 BLOCK**、**B 级 WARN**；变小／消失不判。
+- **为什么不是绝对阈值**：存量实测（生产面 262 文件／3264 块）
+  **A 2927／B 254／C 78／D 4／E 1／F 0**——"不许有 C"会一次染红 82 个存量块，
+  闸立刻变噪声被绕过（**假红比没闸更坏**；与工程侧 C20 台账的「C 档 78」同面同数，互相印证）。
+  存量债走 C20 台账 ＋ 重构条目，本闸只管"新欠的债"。
+- **在哪儿跑**：**分支侧**（dev／TL 在自己的 worktree 里跑 `tools/gate.py`，证据入档）。
+  ⚠ **别在共享主检出里跑**：那里未提交面是**所有人**的在途改动，ratchet 会把别人的账
+  算到你头上（实测首跑就逮到另一会话在途的新增 C 级函数）。
+- **缺 radon 即红**：声明了就得跑，radon 不在目标仓解释器里 ⇒ 腿退出 2 ⇒ 门禁红。
+  （C20 那边缺 radon 是"跳过＋notes"——那是它的面；**门禁整体仍红**，由本闸这条腿兜住。
+  若要让 C20 也红，得改工程侧 `_checks_quality.py`，属产品仓改动，另立条目。）
+  `--no-complexity` 是显式逃生口，证据里会少一条腿，评审看得见。
 - **现状量级**（"域粒度为什么太粗"的依据，实测）：全仓 ≈4939 用例；
   `broker_gateway` 一个域 ≈2774 例（**56%**）、`data_access` 785、`infra` 744、`auth` 476。
   收窄测试范围（按影响面）的理由就来自这个量级。
@@ -176,10 +192,11 @@
     "complexity": {
       "tool": "radon",
       "base": "origin/main",
-      "paths": ["auth", "broker_gateway", "data_access", "dfs", "main", "notification", "scripts", "settings.py", "main.py"],
+      "paths": ["auth", "broker_gateway", "data_access", "notification", "main", "dfs", "main.py", "settings.py", "logging_config.py", "executors.py"],
       "floor": "C",
       "warn_at": "B",
-      "baseline_measured": "A 3280 / B 362 / C 134 / D 22 / E 3 / F 1（3802 块，2026-10-04 实测）"
+      "scan_face_owner": "product C20 (RADON_SCAN_DIRS + RADON_SCAN_FILES)：两处必须同集合，同步闸 tests/test_complexity.py",
+      "baseline_measured": "生产面 A 2927 / B 254 / C 78 / D 4 / E 1 / F 0（3264 块，2026-10-04 实测）"
     }
   },
   "migrations": {

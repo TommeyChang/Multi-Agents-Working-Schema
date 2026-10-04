@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import subprocess
@@ -365,3 +366,65 @@ def test_declared_gate_is_actually_installed() -> None:
     assert "radon" in text, "产品仓 dev 依赖里没有 radon —— 绑定声明了却没人装"
     proc = subprocess.run([str(venv), "-c", "import radon"], capture_output=True, check=False)
     assert proc.returncode == 0, "声明了 radon 但 venv 里没有 ⇒ 门禁会红（先 uv sync）"
+
+
+def _product_list_constants(path: Path, names: tuple[str, ...]) -> dict[str, list[str]] | None:
+    """从产品仓源码里**用 ast 读常量**（不 import：那是执行别人的代码）。"""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return None
+    out: dict[str, list[str]] = {}
+    for node in tree.body:
+        if not (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id in names
+        ):
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (ValueError, SyntaxError):
+            return None
+        out[node.target.id] = [str(v) for v in value]
+    return out or None
+
+
+def _face_diff(declared: set[str], product: set[str]) -> str:
+    """两处扫描面的差异（空串 = 一致）——本体抽出来，好让负例也能打它。"""
+    if declared == product:
+        return ""
+    return (
+        "绑定 §门禁 complexity.paths 与产品仓 C20 的扫描面不一致："
+        f"只在绑定里 {sorted(declared - product)}；只在 C20 里 {sorted(product - declared)}"
+    )
+
+
+def test_scan_face_has_a_single_source(tmp_path: Path) -> None:
+    """**扫描面只许有一处真相**：绑定声明的 `paths` ≡ 产品仓 C20 的常量。
+
+    本体系自己的第一定律：两处并存必然漂移。这里真的并存了两处——
+    工程侧 C20（存量台账）与本闸（新增闸）要判**同一个面**，否则同一个函数
+    一边黄一边绿。这条闸把"同一件事写了两遍"变成一次可核的比对：对不上就红。
+    """
+    target = COORD.parent.parent / "futures-broker-gateway"
+    src = target / "scripts" / "tools" / "process_audit" / "_checks_quality.py"
+    if not src.is_file():
+        pytest.skip("产品仓（或它的 C20）不在本机")
+    consts = _product_list_constants(src, ("RADON_SCAN_DIRS", "RADON_SCAN_FILES"))
+    if not consts:
+        pytest.skip("C20 的扫描面不是字面量常量（形状变了：请人工核）")
+
+    product = set(consts.get("RADON_SCAN_DIRS", [])) | set(consts.get("RADON_SCAN_FILES", []))
+    declared = set(cx.binding_complexity(target).get("paths") or [])
+    assert _face_diff(declared, product) == "", _face_diff(declared, product)
+
+    # **负例（防空绿）**：比对本身必须能逮住漂移；解析器也必须真读到了东西。
+    assert _face_diff(declared, product | {"phantom"}) != ""
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        'RADON_SCAN_DIRS: tuple[str, ...] = ("only_here",)\nRADON_SCAN_FILES: tuple[str, ...] = ()\n',
+        encoding="utf-8",
+    )
+    parsed = _product_list_constants(probe, ("RADON_SCAN_DIRS", "RADON_SCAN_FILES"))
+    assert parsed == {"RADON_SCAN_DIRS": ["only_here"], "RADON_SCAN_FILES": []}, parsed
