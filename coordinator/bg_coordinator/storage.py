@@ -248,6 +248,10 @@ class Store:
                 conf = Confirmation.from_dict(payload)
                 state.confirmations[conf.id] = conf
                 state.confirm_seq = max(state.confirm_seq, _confirm_seq_of(conf.id))
+            if ev.verb == "dispatch" and ev.result == "ok":
+                # 累计台账进事件面：销账（release/reclaim）不回落，故只看 dispatch 事件
+                key = str(ev.actor)
+                state.dispatch_tally[key] = state.dispatch_tally.get(key, 0) + 1
             used = (ev.detail or {}).get("confirmation_used")
             if isinstance(used, str) and used in state.confirmations:
                 state.confirmations[used].used_by = ev.id
@@ -280,6 +284,8 @@ class Store:
         for cid in sorted(ca & cb):
             if state.confirmations[cid].to_dict() != rebuilt.confirmations[cid].to_dict():
                 diffs.append(f"用户确认 {cid} 字段不一致")
+        if state.dispatch_tally != rebuilt.dispatch_tally:
+            diffs.append(f"缓存派单累计台账与重放不一致：{state.dispatch_tally} ≠ {rebuilt.dispatch_tally}")
         return diffs
 
     def rebuild_and_save(self) -> State:

@@ -476,6 +476,46 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
             )
         )
 
+    # 11.10 **功能条目没有闭环路径**——闸在 accept 那一刻；这条管"还没走到验收的"。
+    #
+    #      为什么要有：`accept` 时的闸只拦得住"走到验收"的条目，
+    #      而"只交模块单测"的条目往往**根本走不到**（或者被人工放行）。
+    #      存量与该报的，在这里逐条露出来。
+    from .models import AcceptanceType
+    from .validators import NO_CLOSURE
+
+    for t in sorted(state.tasks.values(), key=lambda x: x.id):
+        if t.kind != Kind.T or NO_CLOSURE in (t.constraints or []):
+            continue
+        if any(i.type == AcceptanceType.CLOSURE for i in t.acceptance):
+            continue
+        if not t.acceptance:
+            continue  # 还没定稿的条目不算缺口（define 会拦四要素）
+        out.append(
+            Anomaly(
+                Code.E_NO_CLOSURE_PATH,
+                t.id,
+                "功能条目的验收里没有闭环路径（只有模块单测＝未闭环）",
+                owner=t.definer or t.owner or "pm",
+                hint=(
+                    "补一条 closure 验收项；确属纯文档／纯口径 ⇒ 声明 constraint "
+                    f"`{NO_CLOSURE}`（审计会逐条点名，豁免可见）"
+                ),
+            )
+        )
+    #      豁免不是"消失"：声明了就要能被数出来
+    exempt = sorted(t.id for t in state.tasks.values() if NO_CLOSURE in (t.constraints or []))
+    if exempt:
+        out.append(
+            Anomaly(
+                Code.OK,
+                "闭环路径豁免",
+                f"{len(exempt)} 条声明了 `{NO_CLOSURE}`：{'、'.join(exempt)}",
+                owner="pm",
+                hint="豁免要逐条能被看见；若某条其实需要闭环，撤掉声明",
+            )
+        )
+
     # 12. 合并队列里的冲突拒绝项 → 转 TL 动作项
     from .models import MergeState
 

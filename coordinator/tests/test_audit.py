@@ -57,7 +57,11 @@ def _full(tmp_path: Path, tid: str = "T-D-1") -> State:
         params=Params(
             whitelist=["data_access/**"],
             frozen=[],
-            acceptance=[AcceptanceItem(type=AcceptanceType.TEST, cmd="pytest -q", desc="绿")],
+            acceptance=[
+                AcceptanceItem(type=AcceptanceType.TEST, cmd="pytest -q", desc="绿"),
+                # 功能条目必须有闭环路径（rule_closure_path）——健康态就得齐
+                AcceptanceItem(type=AcceptanceType.CLOSURE, desc="入口动作 → 可观测反应"),
+            ],
         ),
     ).state
     s = apply(s, "claim-dev", tid, _tl()).state

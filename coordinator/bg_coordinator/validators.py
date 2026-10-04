@@ -10,7 +10,7 @@ import fnmatch
 from pathlib import Path
 
 from .errors import Code, Rejection
-from .models import AcceptanceType, Actor, Evidence, Role, Task, TaskState
+from .models import AcceptanceType, Actor, Evidence, Kind, Role, Task, TaskState
 
 # ---------------------------------------------------------------------------
 # 路径 / 白名单
@@ -365,12 +365,55 @@ def rule_8b_evidence_readable(evidence_path: str) -> Rejection | None:
     return None
 
 
+#: 允许"本条不需要闭环路径"的显式豁免（例：纯文档／纯口径条目）。
+#: 它仍然可核：`audit` 会把声明了豁免的条目**逐条点名列出来**——豁免是留痕，不是消失。
+NO_CLOSURE = "no_closure_path"
+
+
+def rule_closure_path(task: Task) -> Rejection | None:
+    """**功能条目必须含闭环路径**（2026-10-01 用户定）。
+
+    判据：`kind=T` 的条目，验收里至少有一条 `closure` 项——一条「入口动作 →
+    系统可观测反应」的端到端断言。**只交模块单测 = 未闭环**：
+
+        单元都绿 ≠ 这条路走得通。
+
+    闸放在 **accept 那一刻**（实质验收的地方），不是 define：
+    define 时验收标准还在长，PM 需要空间；而"能不能验收"就是这条判据要回答的问题。
+    存量缺口由 `audit` 报（`E_NO_CLOSURE_PATH`），不必等走到验收才发现。
+
+    豁免：条目声明 `no_closure_path` 约束（登记在 `KNOWN_CONSTRAINTS`，审计逐条点名）。
+    """
+    if task.kind != Kind.T:
+        return None
+    if NO_CLOSURE in (task.constraints or []):
+        return None
+    if any(item.type == AcceptanceType.CLOSURE for item in task.acceptance):
+        return None
+    return Rejection(
+        Code.E_NO_CLOSURE_PATH,
+        f"{task.id} 的验收里没有闭环路径——功能条目至少要一条"
+        "「入口动作 → 系统可观测反应」的端到端断言",
+        id=task.id,
+        owner=task.acceptor or task.definer,
+        hint=(
+            "补一条 `--acceptance 'closure:<入口动作 → 可观测反应>'`；"
+            "确属纯文档／纯口径条目 ⇒ 定稿时声明 `--constraint no_closure_path`（审计会点名）"
+        ),
+    )
+
+
 def validate_acceptance(task: Task) -> Rejection | None:
     """验收：逐条按结构化断言判定**形式**（实质判定归 PM）。"""
     if not task.acceptance:
         return Rejection(Code.E_UNMET, f"{task.id} 无验收标准", id=task.id, owner=task.acceptor)
+    cl = rule_closure_path(task)
+    if cl:
+        return cl
     unmet: list[str] = []
     for item in task.acceptance:
+        if item.type == AcceptanceType.CLOSURE and not item.desc:
+            unmet.append("闭环路径缺描述（要写成「入口动作 → 可观测反应」）")
         if item.type == AcceptanceType.NEGATIVE and not item.desc:
             unmet.append("负例缺描述")
         if item.type == AcceptanceType.EVIDENCE and item.path:
@@ -408,6 +451,8 @@ def allowed_writer(role: Role) -> bool:
 KNOWN_CONSTRAINTS: dict[str, str] = {
     "zero_migration": "本条判定零迁移；确需迁移 ⇒ 另立条目（dba 评审 ＋ ops 窗口）",
     "no_doc_change": "本条不改文档（若改了，须与它所描述的面同批——见文档同步口径）",
+    #: 豁免"功能条目必须有闭环路径"——**判据 = 审计逐条点名**（豁免必须可数、可见）
+    "no_closure_path": "本条不需要闭环路径（纯文档／纯口径）；audit 会把它逐条列出来",
 }
 
 

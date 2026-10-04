@@ -135,6 +135,13 @@ class State:
     confirmations: dict[str, Confirmation] = field(default_factory=dict)
     #: 确认流水号（`C-<n>`）——号是资源，同一套口径
     confirm_seq: int = 0
+    #: **派单累计台账**：派单方 → 累计发出的子代理授权数（含已销账的）。
+    #:
+    #: 为什么是累计而不是"在办"：用户 2026-10-04 口径是**一个对话累计 ≤10**
+    #: （「一个对话开启的子代理总数不得超过 10 个」）——"在办"会随销账归零，
+    #: 于是"开一个、销一个、再开"可以无限循环，那不是用户要的闸。
+    #: 它进事件面（`replay` 按 `verb=dispatch` 逐条累加），不靠缓存。
+    dispatch_tally: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -151,6 +158,7 @@ class State:
             "waiters": list(self.waiters),
             "confirmations": {k: v.to_dict() for k, v in self.confirmations.items()},
             "confirm_seq": self.confirm_seq,
+            "dispatch_tally": dict(self.dispatch_tally),
         }
 
     @staticmethod
@@ -171,6 +179,7 @@ class State:
                 k: Confirmation.from_dict(v) for k, v in d.get("confirmations", {}).items()
             },
             confirm_seq=int(d.get("confirm_seq", 0)),
+            dispatch_tally={str(k): int(v) for k, v in d.get("dispatch_tally", {}).items()},
         )
 
 
@@ -1613,8 +1622,9 @@ def grant_dispatch(
         # 观测态：不拦，但也不假装授权成功——凭证照样发，方便先观测后收紧
         pass
     held = active_grants(new, holder)
+    tally = new.dispatch_tally.get(holder, 0)
     limit = new.quota.subagent_max_per_dispatcher
-    if len(held) >= limit:
+    if tally >= limit:
         return _reject(
             new,
             ts,
@@ -1625,10 +1635,14 @@ def grant_dispatch(
             "",
             Rejection(
                 Code.E_UNAUTHORIZED_DISPATCH,
-                f"{holder} 手上的子代理授权已达上限 {limit}（在手 {len(held)}）",
+                f"{holder} 的**累计**派单已达上限 {limit}（累计 {tally}，在手 {len(held)}）"
+                "——累计口径：销账不重置",
                 id=task_id,
                 owner=holder,
-                hint="先等子代理回报销账，或显式调高 quota 的 subagent_max_per_dispatcher",
+                hint=(
+                    "复用已有子代理，或由派单方自办；确需更多 ⇒ 显式调高 quota 的 "
+                    "subagent_max_per_dispatcher（那是一次有人负责的决定）"
+                ),
             ),
         )
     if any(ls.task == task_id for ls in active_grants(new)):
@@ -1650,6 +1664,8 @@ def grant_dispatch(
         )
 
     lease_id = f"L-{uuid.uuid4().hex[:12]}"
+    # 累计台账：发出去就 +1，**销账不回落**（用户口径：累计 ≤10）
+    new.dispatch_tally[holder] = tally + 1
     new.leases[lease_id] = Lease(
         lease_id=lease_id,
         klass=SUBAGENT_KLASS,

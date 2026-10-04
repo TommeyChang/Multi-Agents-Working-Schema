@@ -235,7 +235,10 @@ def test_rule_8b_checks_filesystem(tmp_path: Path) -> None:
 def test_validate_acceptance_reports_missing_evidence(tmp_path: Path) -> None:
     t = _task(
         TaskState.VERIFIED,
-        acceptance=[AcceptanceItem(type=AcceptanceType.EVIDENCE, path=str(tmp_path / "gone"))],
+        acceptance=[
+            AcceptanceItem(type=AcceptanceType.EVIDENCE, path=str(tmp_path / "gone")),
+            AcceptanceItem(type=AcceptanceType.CLOSURE, desc="入口动作 → 可观测反应"),
+        ],
     )
     rej = validate_acceptance(t)
     assert rej is not None and rej.code == Code.E_UNMET
@@ -247,6 +250,7 @@ def test_validate_acceptance_ok() -> None:
         acceptance=[
             AcceptanceItem(type=AcceptanceType.TEST, cmd="pytest -q"),
             AcceptanceItem(type=AcceptanceType.NEGATIVE, desc="未注入仍 200 ⇒ 必红"),
+            AcceptanceItem(type=AcceptanceType.CLOSURE, desc="入口动作 → 可观测反应"),
         ],
     )
     assert validate_acceptance(t) is None

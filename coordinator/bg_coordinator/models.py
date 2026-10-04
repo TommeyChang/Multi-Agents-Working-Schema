@@ -130,6 +130,10 @@ class AcceptanceType(StrEnum):
     NEGATIVE = "negative"
     EVIDENCE = "evidence"
     MANUAL = "manual"
+    #: **闭环路径**：一条「入口动作 → 系统可观测反应」的端到端断言。
+    #: 为什么它是独立类型而不是 `test` 的一种：只交模块单测的条目**看着全绿却没闭环**——
+    #: 形状上必须能把"这条路走通了"与"单元都过了"分开，否则判据无从下手。
+    CLOSURE = "closure"
 
 
 @dataclass(frozen=True)

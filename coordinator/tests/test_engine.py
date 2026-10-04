@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from conftest import budgeted  # noqa: E402
+from conftest import budgeted, closure_item  # noqa: E402
 
 from bg_coordinator.engine import Params, State, alloc_number, apply, format_id
 from bg_coordinator.errors import Code
@@ -41,6 +41,7 @@ def _acceptance() -> list[AcceptanceItem]:
     return [
         AcceptanceItem(type=AcceptanceType.TEST, cmd="pytest -q", desc="全量绿"),
         AcceptanceItem(type=AcceptanceType.NEGATIVE, desc="未注入仍 200 ⇒ 必红"),
+        closure_item(),
     ]
 
 
@@ -273,7 +274,8 @@ def test_accept_rejects_unmet_acceptance(tmp_path: Path) -> None:
     s = _to_verified(budgeted(State()), tmp_path)
     # 人为把验收项改成引用不存在的证据
     s.tasks["T-D-1"].acceptance = [
-        AcceptanceItem(type=AcceptanceType.EVIDENCE, path=str(tmp_path / "gone"))
+        AcceptanceItem(type=AcceptanceType.EVIDENCE, path=str(tmp_path / "gone")),
+        closure_item(),  # 闭环项给上，这条测的是"证据缺失"而不是"没闭环"
     ]
     r = apply(s, "accept", "T-D-1", _pm())
     assert not r.ok

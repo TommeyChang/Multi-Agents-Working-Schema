@@ -46,3 +46,13 @@ def budgeted(state, budget: int = 8):
 
     state.quota = Quota(enabled=True, per_line={ln.value: budget for ln in _Line})
     return state
+
+
+def closure_item(desc: str = "入口动作 → 系统可观测反应"):
+    """标准**闭环路径**验收项——功能条目必须有至少一条（`rule_closure_path`）。
+
+    放进共享夹具而不是每个测试各写一遍：它是**口径**，不是各测试的偏好。
+    """
+    from bg_coordinator.models import AcceptanceItem, AcceptanceType
+
+    return AcceptanceItem(type=AcceptanceType.CLOSURE, desc=desc)

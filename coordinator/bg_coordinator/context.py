@@ -109,7 +109,8 @@ ROLE_READ_MAX: dict[str, int] = {
     "po": 16400,
     "pm": 14000,
     "tech-lead": 27300,
-    "dev": 15700,
+    # dev 也要读派单面（它可再开 dev）——SUBAGENT §二 写明累计口径后 +200
+    "dev": 15900,
     "dba": 15800,
     "ops": 14700,
 }

@@ -232,6 +232,9 @@ def _acceptance_items(args: argparse.Namespace) -> list[AcceptanceItem] | None:
             items.append(AcceptanceItem(type=AcceptanceType.NEGATIVE, desc=rest))
         elif typ == "evidence":
             items.append(AcceptanceItem(type=AcceptanceType.EVIDENCE, path=rest, desc=rest))
+        elif typ == "closure":
+            # **闭环路径**：功能条目必须有至少一条（rule_closure_path）
+            items.append(AcceptanceItem(type=AcceptanceType.CLOSURE, desc=rest))
         else:
             items.append(AcceptanceItem(type=AcceptanceType.MANUAL, desc=spec))
     return items
@@ -596,6 +599,7 @@ def cmd_grants(args: argparse.Namespace) -> int:
                 {
                     "count": len(rows),
                     "limit": state.quota.subagent_max_per_dispatcher,
+                    "tally": dict(state.dispatch_tally),
                     "grants": [
                         {
                             "lease_id": ls.lease_id,
@@ -611,7 +615,13 @@ def cmd_grants(args: argparse.Namespace) -> int:
             )
         )
         return 0
-    print(f"在手子代理授权 {len(rows)} ／ 上限 {state.quota.subagent_max_per_dispatcher}")
+    limit = state.quota.subagent_max_per_dispatcher
+    # **两个数都要给**：在手是当下占着几个，累计是这个派单方一共开了几个
+    # ——闸看的是**累计**（用户口径：一个对话累计 ≤10），在手只作观察。
+    tally_line = "、".join(
+        f"{k} 累计 {v}/{limit}" for k, v in sorted(state.dispatch_tally.items())
+    ) or "尚无派单记录"
+    print(f"在手子代理授权 {len(rows)} ／ 累计台账：{tally_line}")
     for ls in rows:
         held = int(now - ls.created_at)
         print(f"  {ls.lease_id}  {ls.holder:<24} {ls.task:<10} 已持 {held}s / TTL {int(ls.ttl)}s")

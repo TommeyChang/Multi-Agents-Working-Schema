@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 import pytest
-from conftest import budgeted  # noqa: E402
+from conftest import budgeted, closure_item  # noqa: E402
 
 from bg_coordinator.engine import CONFIRM_TTL_SECONDS, Params, State, apply, grant_confirm
 from bg_coordinator.models import (
@@ -191,6 +191,7 @@ def test_full_chain_closes_with_every_role(tmp_path: Path) -> None:
             acceptance=[
                 AcceptanceItem(type=AcceptanceType.TEST, cmd="uv run pytest -q", desc="全绿"),
                 AcceptanceItem(type=AcceptanceType.NEGATIVE, desc="未注入仍 200 ⇒ 必红"),
+                closure_item(),
             ],
         ),
     ).state
@@ -245,7 +246,10 @@ def test_intra_line_technical_path_closes_without_po(tmp_path: Path) -> None:
             priority=Priority.P1, whitelist=["data_access/kline/**"],
             frozen=[],
             # **本线自决要求四要素齐**——自己决定开工，就等于自己把它变成可开发任务
-            acceptance=[AcceptanceItem(type=AcceptanceType.TEST, cmd="pytest", desc="绿")],
+            acceptance=[
+                AcceptanceItem(type=AcceptanceType.TEST, cmd="pytest", desc="绿"),
+                closure_item(),
+            ],
         ),
     )
     assert r.ok, f"本线自决四要素齐却被拒：{r.rejection}"

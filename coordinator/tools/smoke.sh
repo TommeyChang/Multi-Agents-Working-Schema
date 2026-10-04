@@ -67,6 +67,7 @@ fi
 check "claim-analyze"  coord claim-analyze --id "$TID" --role pm:pm-D:D
 check "define"         coord define --id "$TID" --role pm:pm-D:D \
                          --whitelist 'data_access/**' --frozen main.py \
+                         --acceptance 'closure:入口动作 → 系统可观测反应' \
                          --acceptance 'test:uv run pytest -q' \
                          --acceptance 'negative:未注入仍 200 ⇒ 必红'
 check "ready"          coord ready --role-name tech-lead
@@ -241,6 +242,7 @@ check "reserve alembic 首个" bash -c "'$PY' -m bg_coordinator.cli --root '$ROO
 check_fail "reserve alembic 第二个 ⇒ E_NUMBER_INFLIGHT" "$PY" -m bg_coordinator.cli --root "$ROOT" reserve --family alembic --holder dba-b --task T-D-2
 
 # 监视器：有 delta 唤醒 / 无 delta 静默 / 任意 cwd 可跑
+check "rule_coverage 无缺口、欠账未超上限（0）" "$PY" "$PKG_ROOT/tools/rule_coverage.py"
 check "context_budget 在预算内（0）" "$PY" "$PKG_ROOT/tools/context_budget.py"
 check_fail "context_budget 坏根 ⇒ 用法错（2）" "$PY" "$PKG_ROOT/tools/context_budget.py" --root /tmp
 check "watch 有 delta ⇒ 唤醒（0）" env BG_COORDINATOR_ROOT="$ROOT" BG_COORDINATOR_STATE="$SANDBOX/watch" \

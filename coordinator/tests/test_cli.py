@@ -145,7 +145,8 @@ def test_full_lifecycle_via_cli(root: str, tmp_path: Path, capsys: pytest.Captur
         ("claim-analyze", "--id", tid, "--role", "pm:pm-D:D"),
         (
             "define", "--id", tid, "--role", "pm:pm-D:D",
-            "--whitelist", "data_access/**", "--acceptance", "test:uv run pytest -q",
+            "--whitelist", "data_access/**", "--acceptance", "closure:入口动作 → 可观测反应",
+            "--acceptance", "test:uv run pytest -q",
         ),
         ("claim-dev", "--id", tid, "--role", "tl:TL-D:D"),
         ("start", "--id", tid, "--role", "tl:TL-D:D"),
@@ -176,7 +177,8 @@ def test_trace_and_audit_and_report(root: str, tmp_path: Path, capsys: pytest.Ca
         ("claim-analyze", "--id", tid, "--role", "pm:pm-D:D"),
         (
             "define", "--id", tid, "--role", "pm:pm-D:D",
-            "--whitelist", "data_access/**", "--acceptance", "test:pytest",
+            "--whitelist", "data_access/**", "--acceptance", "closure:入口动作 → 可观测反应",
+            "--acceptance", "test:pytest",
         ),
         ("claim-dev", "--id", tid, "--role", "tl:TL-D:D"),
         ("start", "--id", tid, "--role", "tl:TL-D:D"),
@@ -249,7 +251,7 @@ def test_expect_ver_blocks_stale_write(root: str, capsys: pytest.CaptureFixture[
     for step in (
         ("claim-analyze", "--id", tid, "--role", "pm:pm-D:D"),
         ("define", "--id", tid, "--role", "pm:pm-D:D", "--whitelist", "a/**",
-         "--acceptance", "test:pytest"),
+         "--acceptance", "closure:入口动作 → 可观测反应", "--acceptance", "test:pytest"),
         ("claim-dev", "--id", tid, "--role", "tl:TL-D:D"),
     ):
         assert _run(root, *step) == 0, capsys.readouterr().err
@@ -286,7 +288,8 @@ def test_merge_commands(root: str, tmp_path: Path, capsys: pytest.CaptureFixture
         ("claim-analyze", "--id", tid, "--role", "pm:pm-D:D"),
         (
             "define", "--id", tid, "--role", "pm:pm-D:D",
-            "--whitelist", "data_access/**", "--acceptance", "test:pytest",
+            "--whitelist", "data_access/**", "--acceptance", "closure:入口动作 → 可观测反应",
+            "--acceptance", "test:pytest",
         ),
         ("claim-dev", "--id", tid, "--role", "tl:TL-D:D"),
         ("start", "--id", tid, "--role", "tl:TL-D:D"),
@@ -353,7 +356,7 @@ def _setup_defined(root: str, capsys: pytest.CaptureFixture[str]) -> str:
     _run(
         root, "define", "--id", tid, "--role", "pm:pm-D:D",
         "--whitelist", "data_access/**", "--frozen", "main.py",
-        "--acceptance", "test:uv run pytest -q",
+        "--acceptance", "closure:入口动作 → 可观测反应", "--acceptance", "test:uv run pytest -q",
     )
     capsys.readouterr()
     return tid
@@ -839,7 +842,7 @@ def test_intra_line_raise_bypasses_po(root: str, capsys: pytest.CaptureFixture[s
         "--scope", "intra_line",
         "--title", "本线口径缺口", "--source-ref", "T-D-1 开发中发现", "--priority", "P1",
         "--whitelist", "data_access/**", "--frozen", "main.py",
-        "--acceptance", "test:uv run pytest -q",
+        "--acceptance", "closure:入口动作 → 可观测反应", "--acceptance", "test:uv run pytest -q",
     ) == 0
     payload = json.loads(capsys.readouterr().out)
     tid = payload["detail"]["id"]
@@ -903,7 +906,7 @@ def test_intra_line_cannot_land_on_another_line(
     assert _run(
         root, "raise", "--role", "tl:TL-D:D", "--category", "technical",
         "--scope", "intra_line", "--title", "想落 C 线", "--line", "C",
-        "--whitelist", "a/**", "--acceptance", "test:pytest",
+        "--whitelist", "a/**", "--acceptance", "closure:入口动作 → 可观测反应", "--acceptance", "test:pytest",
     ) == 1
     assert "E_CROSS_LINE" in capsys.readouterr().err
 
@@ -932,7 +935,7 @@ def test_technical_issue_is_tl_decidable(root: str, capsys: pytest.CaptureFixtur
     assert _run(
         root, "--json", "raise", "--role", "tl:TL-D:D", "--category", "technical",
         "--title", "内部拆法调整", "--whitelist", "data_access/kline/**",
-        "--acceptance", "test:uv run pytest -q",
+        "--acceptance", "closure:入口动作 → 可观测反应", "--acceptance", "test:uv run pytest -q",
     ) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["detail"]["routed_to"] == "tech-lead"
@@ -952,7 +955,8 @@ def test_design_issue_cannot_be_self_determined(
     assert _run(
         root, "raise", "--role", "tl:TL-D:D", "--category", "design",
         "--scope", "intra_line", "--title", "改数据面契约",
-        "--whitelist", "data_access/ports.py", "--acceptance", "test:pytest",
+        "--whitelist", "data_access/ports.py", "--acceptance", "closure:入口动作 → 可观测反应",
+        "--acceptance", "test:pytest",
     ) == 1
     err = capsys.readouterr().err
     assert "E_CATEGORY_ESCALATE" in err
@@ -1026,7 +1030,7 @@ def _deliver_with(
         (
             "define", "--id", tid, "--role", "pm:pm-D:D",
             "--whitelist", "a/**", "--whitelist", "docs/**",
-            "--acceptance", "test:pytest",
+            "--acceptance", "closure:入口动作 → 可观测反应", "--acceptance", "test:pytest",
         ),
         ("claim-dev", "--id", tid, "--role", "tl:TL-D:D"),
         ("start", "--id", tid, "--role", "tl:TL-D:D"),
