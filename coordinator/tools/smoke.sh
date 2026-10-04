@@ -168,6 +168,15 @@ printf 'revision = "0001"\ndown_revision = None\n' > "$REPO/alembic/versions/000
 check "migration_gate 好图全过"  "$PY" "$PKG_ROOT/tools/migration_gate.py" --target "$REPO"
 printf 'revision = "0001"\ndown_revision = None\n' > "$REPO/alembic/versions/0002_dup.py"
 check_fail "migration_gate 撞号 ⇒ BLOCK" "$PY" "$PKG_ROOT/tools/migration_gate.py" --target "$REPO"
+rm -f "$REPO/alembic/versions/0002_dup.py"
+printf 'revision = "0002"\ndown_revision = "0001"\n' > "$REPO/alembic/versions/0002_b.py"
+printf 'revision = "0003"\ndown_revision = "0001"\n' > "$REPO/alembic/versions/0003_c.py"
+check_fail "migration_gate **分叉** ⇒ BLOCK（两个 head）" "$PY" "$PKG_ROOT/tools/migration_gate.py" --target "$REPO"
+rm -f "$REPO/alembic/versions/0003_c.py"
+
+# 串行族放号闸：迁移件同时只允许一个在飞占号（号顺序＝链位顺序）
+check "reserve alembic 首个" bash -c "'$PY' -m bg_coordinator.cli --root '$ROOT' reserve --family alembic --holder dba-a --task T-D-1 >/dev/null 2>&1"
+check_fail "reserve alembic 第二个 ⇒ E_NUMBER_INFLIGHT" "$PY" -m bg_coordinator.cli --root "$ROOT" reserve --family alembic --holder dba-b --task T-D-2
 
 # 监视器：有 delta 唤醒 / 无 delta 静默 / 任意 cwd 可跑
 check "watch 有 delta ⇒ 唤醒（0）" env BG_COORDINATOR_ROOT="$ROOT" BG_COORDINATOR_STATE="$SANDBOX/watch" \

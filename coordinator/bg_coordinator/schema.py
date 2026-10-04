@@ -151,7 +151,7 @@ ROLES: tuple[RoleSpec, ...] = (
         reports_to="tech-lead",
         dispatch=(),
         brief="实现 ＋ 测试 ＋ 门禁；永不 merge/push、不改任务数据",
-        workface=("auth/", "broker_gateway/", "data_access/", "tests/", "alembic/"),
+        workface=("本线工作面（见工程绑定 §线别与工作面）",),
     ),
     RoleSpec(
         key=Role.OPS.value,
@@ -159,7 +159,7 @@ ROLES: tuple[RoleSpec, ...] = (
         reports_to="user",
         dispatch=(),
         brief="部署、迁移窗口执行、巡检、容量；完全权限但只在本面",
-        workface=("scripts/ops/", "deploy/", "服务器与后台任务", "迁移执行窗口"),
+        workface=("部署面（见工程绑定 §线别与工作面）", "服务器与后台任务", "迁移执行窗口"),
     ),
     RoleSpec(
         key=Role.DBA.value,
@@ -167,7 +167,7 @@ ROLES: tuple[RoleSpec, ...] = (
         reports_to="user",
         dispatch=(),
         brief="迁移评审闸 ＋ 实例运维；评审即入库",
-        workface=("alembic/ 评审", "备份/恢复/容量/慢查询/授权", "资源回收执行层"),
+        workface=("迁移件评审", "备份/恢复/容量/慢查询/授权", "资源回收执行层"),
     ),
 )
 

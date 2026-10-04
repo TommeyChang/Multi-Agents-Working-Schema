@@ -1,7 +1,8 @@
 """迁移闸测试——**判据要有齿**：坏图必须被逮住，好图不许误报。
 
-判据是本体系自持的（静态读迁移图与号），所以测试也自持：
-在 tmp 里造迁移件，不碰真库、不跑迁移。
+判据本身在 `bg_coordinator/migrations.py`（系统模块）——**三个收口点共用同一处口径**：
+放号（协调器号段）、提交（`tools/commit_gate.py`）、合并（`merge.py` 的链位闸）。
+这里既测判据，也测外壳（`tools/migration_gate.py`）能跑。
 """
 
 from __future__ import annotations
@@ -20,6 +21,18 @@ assert _SPEC and _SPEC.loader
 mg = importlib.util.module_from_spec(_SPEC)
 sys.modules["migration_gate"] = mg
 _SPEC.loader.exec_module(mg)
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from bg_coordinator import migrations as mig  # noqa: E402
+
+#: 判据在系统模块；`mg` 只是外壳——测试直接测判据，外壳另有一条
+judge = mig.judge
+heads_of = mig.heads_of
+
+
+def load_migrations(repo: Path) -> list[mig.Migration]:
+    """测试用的便捷包装：迁移目录固定为约定值（正文只关心图，不关心目录）。"""
+    return mig.load_migrations(repo, "alembic/versions")
 
 
 def _migration(repo: Path, name: str, revision: str, down: str | None) -> None:
@@ -43,10 +56,10 @@ def _chain(repo: Path, n: int = 3) -> None:
 def test_healthy_chain_passes(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _chain(repo, 3)
-    rows = mg.load_migrations(repo)
+    rows = load_migrations(repo)
     assert [r.revision for r in rows] == ["0001", "0002", "0003"]
-    assert mg.judge(rows, []) == []
-    assert mg.heads_of(rows) == ["0003"]
+    assert judge(rows, []) == []
+    assert heads_of(rows) == ["0003"]
 
 
 def test_duplicate_revision_is_blocked(tmp_path: Path) -> None:
@@ -54,14 +67,14 @@ def test_duplicate_revision_is_blocked(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _chain(repo, 2)
     _migration(repo, "0099_dup.py", "0002", "0001")
-    blocks = mg.judge(mg.load_migrations(repo), [])
+    blocks = judge(load_migrations(repo), [])
     assert any("撞号" in b for b in blocks)
 
 
 def test_dangling_parent_is_blocked(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _migration(repo, "0001_a.py", "0001", "9999")
-    blocks = mg.judge(mg.load_migrations(repo), [])
+    blocks = judge(load_migrations(repo), [])
     assert any("悬空父节点" in b for b in blocks)
 
 
@@ -71,7 +84,7 @@ def test_two_heads_are_blocked(tmp_path: Path) -> None:
     _migration(repo, "0001_a.py", "0001", None)
     _migration(repo, "0002_b.py", "0002", "0001")
     _migration(repo, "0003_c.py", "0003", "0001")
-    blocks = mg.judge(mg.load_migrations(repo), [])
+    blocks = judge(load_migrations(repo), [])
     assert any("head" in b and "2" in b for b in blocks)
 
 
@@ -86,9 +99,9 @@ def test_orphan_is_blocked(tmp_path: Path) -> None:
     _migration(repo, "0002_b.py", "0002", "0001")
     _migration(repo, "0003_island.py", "0003", "0004")
     _migration(repo, "0004_island.py", "0004", "0003")
-    rows = mg.load_migrations(repo)
-    assert mg.heads_of(rows) == ["0002"], "先确认只有一个 head，否则测的不是可达性"
-    blocks = mg.judge(rows, [])
+    rows = load_migrations(repo)
+    assert heads_of(rows) == ["0002"], "先确认只有一个 head，否则测的不是可达性"
+    blocks = judge(rows, [])
     assert any("不可达" in b for b in blocks)
 
 
@@ -101,23 +114,23 @@ def test_new_migration_must_follow_base_head(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _migration(repo, "0001_a.py", "0001", None)
     _migration(repo, "0003_c.py", "0003", "0001")
-    base_rows = mg.load_migrations(repo)
+    base_rows = load_migrations(repo)
     # 合法新增：号大于基线最大号且父节点等于基线 head
     _migration(repo, "0004_ok.py", "0004", "0003")
-    rows = mg.load_migrations(repo)
-    assert [b for b in mg.judge(rows, base_rows) if b.startswith("[5]")] == []
+    rows = load_migrations(repo)
+    assert [b for b in judge(rows, base_rows) if b.startswith("[5]")] == []
     # 插队：填进基线的空洞号
     _migration(repo, "0002_late.py", "0002", "0003")
-    blocks = mg.judge(mg.load_migrations(repo), base_rows)
+    blocks = judge(load_migrations(repo), base_rows)
     assert any("插队" in b for b in blocks)
 
 
 def test_new_migration_from_wrong_parent_is_blocked(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _chain(repo, 2)
-    base_rows = mg.load_migrations(repo)
+    base_rows = load_migrations(repo)
     _migration(repo, "0005_fork.py", "0005", "0001")  # 父节点不是基线 head
-    blocks = mg.judge(mg.load_migrations(repo), base_rows)
+    blocks = judge(load_migrations(repo), base_rows)
     assert any("重新分叉" in b for b in blocks)
 
 
@@ -129,15 +142,15 @@ def test_tuple_down_revision_is_parsed(tmp_path: Path) -> None:
     (d / "0006_merge.py").write_text(
         'revision = "0006"\ndown_revision = ("0004", "0005")\n', encoding="utf-8"
     )
-    rows = mg.load_migrations(repo)
+    rows = load_migrations(repo)
     assert rows[0].downs == ("0004", "0005")
-    assert mg.heads_of(rows) == ["0006"]
+    assert heads_of(rows) == ["0006"]
 
 
 def test_empty_versions_dir_is_blocked(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / "alembic" / "versions").mkdir(parents=True)
-    assert mg.judge([], []) != []
+    assert judge([], []) != []
 
 
 def test_missing_versions_dir_is_a_clean_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

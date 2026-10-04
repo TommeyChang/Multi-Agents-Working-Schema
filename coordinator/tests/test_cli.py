@@ -563,10 +563,13 @@ def test_out_of_band_number_advance_is_reported(root: str, capsys: pytest.Captur
 
 
 def test_two_phase_reserve_then_materialize(root: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """**待建编号有状态**：占号时物还没有，落物后转已落物。
+    """**待建编号有状态，且迁移族串行**。
 
-    这是迁移号防撞号的关键：**占号即推进水位**，后来者拿到的是下一个号，
-    不会两条线各自以为"最大号是 0036"而都去选 0037。
+    两件事一起钉：
+    ① **占号即推进水位**——后来者拿到的是下一个号，不会两条线都去选同一个；
+    ② **该族同时只允许一个在飞占号**——号的顺序就是链位顺序：
+       两个件同时占号、各自把父节点接到当时的 head 上，合起来必然分叉成两个 head。
+       放号时收口，比合并时返工便宜得多（合并时分支已推、评审已过、窗口已排）。
     """
     _run(root, "init")
     capsys.readouterr()
@@ -574,29 +577,36 @@ def test_two_phase_reserve_then_materialize(root: str, capsys: pytest.CaptureFix
     assert _run(root, "reserve", "--family", "alembic", "--holder", "dev-A", "--task", "T-A-86") == 0
     first = capsys.readouterr().out.split()[0]
 
+    # **串行族**：迁移件同时只允许一个在飞占号——第二个在第一个落物前取，必被拒
+    assert _run(root, "reserve", "--family", "alembic", "--holder", "dev-B", "--task", "T-B-28") == 1
+    err = capsys.readouterr().err
+    assert "E_NUMBER_INFLIGHT" in err, err
+
+    # 落物后即放行，且**水位已推进**：第二条线拿到下一个号
+    assert _run(root, "materialize", "--family", "alembic", "--number", first, "--id", "x") == 0
+    capsys.readouterr()
     assert _run(root, "reserve", "--family", "alembic", "--holder", "dev-B", "--task", "T-B-28") == 0
     second = capsys.readouterr().out.split()[0]
-
-    # **水位已推进**：两条线拿到不同的号
     assert first != second
 
+    # 账上此刻：**一个已落物 ＋ 一个在飞**——这正是串行族的稳态
     assert _run(root, "--json", "number") == 0
     payload = json.loads(capsys.readouterr().out)
     inv = payload["inventory"]["alembic"]
-    assert inv["pending"] == 2
-    assert inv["materialized"] == 0
-    assert {p["holder"] for p in payload["pending"]} == {"dev-A", "dev-B"}
+    assert inv["materialized"] == 1
+    assert inv["pending"] == 1
+    assert {p["holder"] for p in payload["pending"]} == {"dev-B"}
 
-    # 落物
+    # 第二件落物后，账上没有在飞的了——下一次取号才放行
     assert _run(
         root, "materialize", "--family", "alembic",
-        "--number", first.lstrip("0") or "0", "--id", "0037_migration.py",
+        "--number", second.lstrip("0") or "0", "--id", "0037_migration.py",
     ) == 0
     capsys.readouterr()
     assert _run(root, "--json", "number") == 0
     inv = json.loads(capsys.readouterr().out)["inventory"]["alembic"]
-    assert inv["materialized"] == 1
-    assert inv["pending"] == 1
+    assert inv["materialized"] == 2
+    assert inv["pending"] == 0
 
 
 def test_pending_allocation_without_task_is_an_anomaly(

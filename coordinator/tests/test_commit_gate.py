@@ -410,3 +410,105 @@ def test_judge_deduplicates_and_sorts_files() -> None:
     task = Task(id="T-D-1", kind=Kind.T, line="D", whitelist=["a/**"], frozen=[])
     verdict = cg.judge("T-D-1", task, ["a/b.py", "a/a.py", "a/b.py"])
     assert verdict.files == ["a/a.py", "a/b.py"]
+
+
+# ---------------------------------------------------------------------------
+# 迁移腿：**提交时就收口**（放号只保证号唯一，保证不了链位唯一）
+# ---------------------------------------------------------------------------
+
+
+def _bind_migrations(tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, vdir: str) -> None:
+    """给这个临时仓挂一份"只声明迁移目录"的绑定。
+
+    绑定解析顺序是**主干侧优先 → 体系侧兜底**；这里用体系侧那份（把 `bindings_dir`
+    指到 tmp），从而不碰任何真实文件。
+    """
+    import bg_coordinator.binding as b
+
+    side = tmp_path / "bindings"
+    side.mkdir(exist_ok=True)
+    (side / f"{repo.name}.md").write_text(
+        "# 绑定\n\n```json\n"
+        + json.dumps(
+            {
+                "project": repo.name,
+                "version": 1,
+                "lines": {"D": {"name": "d", "workface": ["data_access/"]}},
+                "gate": {"entry": "tools/gate.py"},
+                "migrations": {"dir": vdir, "base": "base"},
+                "protected_assets": ["x"],
+                "scratch_namespace": "bg_",
+                "window": ["起服"],
+                "shared_files": ["todo/**"],
+            },
+            ensure_ascii=False,
+        )
+        + "\n```\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(b, "bindings_dir", lambda: side)
+
+
+def _base_chain(repo: Path, vdir: str, revisions: list[tuple[str, str | None]]) -> None:
+    """在基线上造一条链，并打上 `base` 标签（绑定里声明的基线名）。"""
+    for rev, down in revisions:
+        down_lit = "None" if down is None else f'"{down}"'
+        _stage(repo, f"{vdir}/{rev}_m.py", f'revision = "{rev}"\ndown_revision = {down_lit}\n')
+    _git(repo, "commit", "-q", "-m", "base chain")
+    _git(repo, "tag", "base")
+
+
+def test_migration_leg_blocks_forked_chain(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**分叉必拦**：分支新增件的父节点不是基线 head ⇒ 提交时就拒。
+
+    这正是 DBA 冲突的形态：两个件各自合法，合起来是两个 head。
+    """
+    repo = _init_repo(tmp_path)
+    vdir = "alembic/versions"
+    _base_chain(repo, vdir, [("0001", None), ("0002", "0001")])
+    _stage(repo, f"{vdir}/0003_new.py", 'revision = "0003"\ndown_revision = "0001"\n')  # 接到旧 head
+    root = tmp_path / "coord"
+    tid = _new_task(root, whitelist=["alembic/**"], frozen=[])
+    _bind_migrations(tmp_path, repo, monkeypatch, vdir)
+
+    rc = _run(root, tid, repo)
+    out = capsys.readouterr()
+    assert rc == 1, out
+    assert "迁移链" in out.out, out.out
+    assert "分叉" in out.out or "父节点" in out.out, out.out
+
+
+def test_migration_leg_passes_clean_chain(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """负例锚点：干净链不许误报——否则这条腿会被当噪声绕过。"""
+    repo = _init_repo(tmp_path)
+    vdir = "alembic/versions"
+    _base_chain(repo, vdir, [("0001", None), ("0002", "0001")])
+    _stage(repo, f"{vdir}/0003_new.py", 'revision = "0003"\ndown_revision = "0002"\n')
+    root = tmp_path / "coord"
+    tid = _new_task(root, whitelist=["alembic/**"], frozen=[])
+    _bind_migrations(tmp_path, repo, monkeypatch, vdir)
+
+    rc = _run(root, tid, repo)
+    out = capsys.readouterr()
+    assert rc == 0, out
+    assert "迁移链" not in out.out
+
+
+def test_migration_leg_not_applicable_without_declaration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """绑定没声明迁移目录 ⇒ 该工程没有"迁移件"这类改动 ⇒ 不适用（不拦也不假装判过）。"""
+    repo = _init_repo(tmp_path)
+    _stage(repo, "alembic/versions/0001_x.py", 'revision = "0001"\ndown_revision = None\n')
+    root = tmp_path / "coord"
+    tid = _new_task(root, whitelist=["alembic/**"], frozen=[])
+    import bg_coordinator.binding as b
+
+    monkeypatch.setattr(b, "bindings_dir", lambda: tmp_path / "no-such-bindings")
+
+    rc = _run(root, tid, repo)
+    assert rc == 0, capsys.readouterr()

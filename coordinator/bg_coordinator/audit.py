@@ -412,6 +412,26 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
                 )
             )
 
+    # 11.5 **串行族的在飞占号超过一个**——放号闸只挡"以后"，账上的存量要报出来
+    #
+    #     存量可能来自：规则生效前取的号、`override` 绕过的、事件重放出来的。
+    #     迁移件的号顺序就是链位顺序，两个在飞必然分叉——报给 dba 收口。
+    from .engine import SERIAL_FAMILIES, inflight_of
+
+    for fam in sorted(SERIAL_FAMILIES):
+        flying = inflight_of(state, fam)
+        if len(flying) > 1:
+            nums = [int(e.get("number", -1)) for e in flying]
+            out.append(
+                Anomaly(
+                    Code.E_NUMBER_INFLIGHT,
+                    f"{fam} 族",
+                    f"在飞占号 {len(flying)} 个：{nums}——该族必须串行落物（号顺序＝链位顺序）",
+                    owner="dba",
+                    hint="只留一个在飞：其余 materialize 或让号（须给理由）",
+                )
+            )
+
     # 12. 合并队列里的冲突拒绝项 → 转 TL 动作项
     from .models import MergeState
 

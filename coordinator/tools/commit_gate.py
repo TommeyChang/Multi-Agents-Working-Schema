@@ -95,6 +95,9 @@ _COORDINATOR_ROOT = Path(__file__).resolve().parents[1]
 if str(_COORDINATOR_ROOT) not in sys.path:
     sys.path.insert(0, str(_COORDINATOR_ROOT))
 
+from bg_coordinator import migrations as mig  # noqa: E402
+from bg_coordinator.binding import load as load_binding  # noqa: E402
+from bg_coordinator.binding import locate as locate_binding  # noqa: E402
 from bg_coordinator.models import Task  # noqa: E402
 from bg_coordinator.storage import Store, StoreError  # noqa: E402
 from bg_coordinator.validators import (  # noqa: E402
@@ -135,10 +138,13 @@ class Verdict:
         return not self.blocked
 
 
-def judge(task_id: str, task: Task, changed_files: list[str]) -> Verdict:
-    """把「改动文件集」判到「条目的白名单／不动清单／设计面」上。
+def judge(
+    task_id: str, task: Task, changed_files: list[str], repo: Path | None = None
+) -> Verdict:
+    """把「改动文件集」判到「条目的白名单／不动清单／设计面／**迁移链**」上。
 
-    **纯函数**：不读盘、不写盘，输入齐了就出结果——测试与线上走同一条判据。
+    **前三条是纯函数**：不读盘、不写盘，输入齐了就出结果。
+    **迁移链**要读那个仓的迁移件与基线（`repo` 为空则跳过——调用方在 `main` 里总会给）。
 
     两条刻意的顺序／边界选择：
 
@@ -182,6 +188,16 @@ def judge(task_id: str, task: Task, changed_files: list[str]) -> Verdict:
                 Finding(BLOCK, path, "不在条目白名单内——疑似收编他人在途改动，或超出本条目范围")
             )
 
+    # **迁移链（提交时收口）**：改动里含迁移件 ⇒ 必须过链位判定。
+    #
+    # 为什么提交时就要判：放号只保证**号唯一**，保证不了**链位唯一**。
+    # 两个 DBA 各自合法地取号、各自把父节点接到当时的 head 上，合并起来就是**两个 head**——
+    # 迁升级目标不唯一。等到合并才发现，返工成本最高（分支已推、评审已过、窗口已排）。
+    # 判据与合并闸共用 `bg_coordinator/migrations.py`（**同一处口径**）。
+    blocks = migration_blocks(files, repo) if repo is not None else []
+    for reason in blocks:
+        blocked.append(Finding(BLOCK, task_id, reason))
+
     # 设计面：改了契约／口径的成文表达，就得同批把描述它的文档也改了。
     surface = touches_design_surface(files)
     if surface and not changed_docs(files):
@@ -195,6 +211,36 @@ def judge(task_id: str, task: Task, changed_files: list[str]) -> Verdict:
             )
 
     return Verdict(task=task_id, files=files, blocked=blocked, warns=warns)
+
+
+def migration_blocks(files: list[str], repo: Path) -> list[str]:
+    """含迁移件时的链位判定——判据在 `bg_coordinator/migrations.py`，这里只负责取数与措辞。
+
+    迁移目录与基线**都从工程绑定取**（工程落点归工程）：`migrations.dir`／`migrations.base`。
+    取不到目录 ⇒ 判定无法进行 ⇒ **BLOCK**（宁可不放行，也不假装通过）。
+    """
+    _src, path = locate_binding(repo)
+    data: dict = {}
+    if path is not None:
+        loaded, _err = load_binding(path)
+        data = loaded or {}
+    mconf = data.get("migrations") if isinstance(data.get("migrations"), dict) else {}
+    vdir = str(mconf.get("dir") or "")
+    if not vdir:
+        return []  # 没有迁移目录的声明 ⇒ 本工程没有"迁移件"这类改动，不适用
+    if not any(f.startswith(vdir.rstrip("/") + "/") for f in files):
+        return []  # 本批没有迁移件
+    base = str(mconf.get("base") or "")
+    rows = mig.load_migrations(repo, vdir)
+    if not base:
+        return [
+            "本批含迁移件，但绑定 §迁移 没声明 `base`——**拿不到基线就无法确认链位**，"
+            "这正是提交时要收的口（补 base，或改用 --base 指定）"
+        ]
+    base_rows, err = mig.load_from_git(repo, base, vdir)
+    if err:
+        return [f"本批含迁移件，但基线不可用（{err}）——链位无从确认，拒绝提交"]
+    return [f"迁移链：{b}" for b in mig.judge(rows, base_rows, vdir)]
 
 
 def _payload(verdict: Verdict) -> dict[str, object]:
@@ -360,7 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     if files is None:
         return _fail(2, f"git diff 失败：{git_err or '（无 stderr）'}", want_json, task=args.task)
 
-    verdict = judge(args.task, task, files)
+    verdict = judge(args.task, task, files, repo)
     if args.json:
         print(json.dumps(_payload(verdict), ensure_ascii=False))
     else:

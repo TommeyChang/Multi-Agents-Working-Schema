@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from .errors import Code, Rejection
+from .errors import Code, InflightError, Rejection
 from .models import (
     CATEGORY_OWNER,
     DEFAULT_DEV_LINES,
@@ -262,7 +262,21 @@ def reserve_number(
     所以两条线不会各自以为"主干最大号是 0015"而都去选 0016。
 
     `task` 把号与它的来源条目绑定：**号不是孤立的，它服务于某个条目**。
+
+    **串行族（`SERIAL_FAMILIES`）另有一条**：同族**同时只允许一个在飞占号**。
+    理由：迁移件的**号顺序就是链位顺序**——两个件同时占号、各自把父节点接到当时的 head 上，
+    合起来必然是两个 head。放号时收口，比合并时返工便宜得多。
     """
+    if family in SERIAL_FAMILIES:
+        flying = inflight_of(state, family)
+        if flying:
+            holder_names = "、".join(str(e.get("holder") or "?") for e in flying)
+            raise InflightError(
+                f"{family} 族已有在飞占号（{holder_names}：{flying[0].get('number')}）——"
+                "该族必须串行落物：等它 materialize 或让号后再取",
+                family=family,
+                number=int(flying[0].get("number", -1)),
+            )
     n = alloc_number(state, family, ts=ts, holder=holder, kind="pending")
     entry = state.allocations[-1]
     entry.update({"state": "pending", "task": task, "note": note, "id": ""})
@@ -293,6 +307,20 @@ def release_number(state: State, family: str, number: int, note: str) -> tuple[b
         return False, "让号必须给理由（否则与静默丢弃无异）"
     entry.update({"state": "released", "note": note})
     return True, f"{format_id(family, number)} 已让号：{note}"
+
+
+#: **必须串行落地的族**：号的顺序 == 链位顺序，否则两个各自合法的件会分叉。
+#: 只在这里登记一次——判据在 `reserve_number` 里执行。
+SERIAL_FAMILIES: frozenset[str] = frozenset({"alembic"})
+
+
+def inflight_of(state: State, family: str) -> list[dict[str, Any]]:
+    """某族**已占号但还没落物**的记录——`pending` 就是这个状态。"""
+    return [
+        e
+        for e in state.allocations
+        if str(e.get("family")) == family and str(e.get("state")) == "pending"
+    ]
 
 
 def number_gaps(state: State) -> list[str]:

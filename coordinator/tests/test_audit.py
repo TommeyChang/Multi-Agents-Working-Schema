@@ -232,6 +232,7 @@ def test_rejected_merge_becomes_anomaly(tmp_path: Path) -> None:
     r = request_merge(
         s, "T-D-1", branch="b", commit="c", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], clock=1.0,
+        migration_check=lambda files, base: "",  # 链位判据另有专测（test_merge／test_migration_gate）
     )
     started = dispatch_next(r.state)
     mid = started.detail["merge_id"]

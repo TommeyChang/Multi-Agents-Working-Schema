@@ -25,6 +25,7 @@ class Code(StrEnum):
     E_NUMBER_GAP = "E_NUMBER_GAP"  # 无账之号：号出去了，账上没有
     E_NUMBER_PENDING = "E_NUMBER_PENDING"  # 待建号无归属
     E_NUMBER_TWICE = "E_NUMBER_TWICE"  # 同号双占：同族同号在账上出现两次
+    E_NUMBER_INFLIGHT = "E_NUMBER_INFLIGHT"  # 同族已有在飞的占号：迁移件必须串行落地
     E_DOC_UNSYNCED = "E_DOC_UNSYNCED"  # 设计面动了但文档未同批
     E_DUP_ID = "E_DUP_ID"
     E_BAD_LINE = "E_BAD_LINE"
@@ -99,6 +100,20 @@ class Rejection:
         if self.hint:
             parts.append(f"（{self.hint}）")
         return " ".join(parts)
+
+
+class InflightError(Exception):
+    """同族已有在飞占号——**串行族的放号闸**。
+
+    做成异常而不是返回码，是因为 `reserve_number` 的既有签名返回 `(号, 记录)`，
+    加一个错误返回位会破坏所有调用点；而这条拒绝**必须**在放号那一刻生效
+    （晚一步就是两个件同时存在）。
+    """
+
+    def __init__(self, message: str, *, family: str = "", number: int = -1) -> None:
+        super().__init__(message)
+        self.family = family
+        self.number = number
 
 
 class CoordinatorError(Exception):

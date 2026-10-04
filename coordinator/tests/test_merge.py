@@ -100,13 +100,24 @@ def _delivered(
 
 
 # ---------------------------------------------------------------------------
-# 六闸
+# 各闸
 # ---------------------------------------------------------------------------
+
+
+def _req(s, *a, **kw):
+    """入队便捷入口——**注入一个"链位通过"的桩**。
+
+    链位判据本身（分叉／插队／撞号）由 `tests/test_migration_gate.py` 逐条测；
+    这里测的是其余各闸，用一个恒过的桩把它们与迁移判据解耦。
+    真实装配在 CLI（`cli._migration_checker`），它从 git 读两张图。
+    """
+    kw.setdefault("migration_check", lambda files, base: "")
+    return request_merge(s, *a, **kw)
 
 
 def test_request_merge_ok(tmp_path: Path) -> None:
     s = _delivered(tmp_path)
-    r = request_merge(
+    r = _req(
         s, "T-D-1", branch="dev/TD1", commit="abc1234", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], clock=1.0,
     )
@@ -118,7 +129,7 @@ def test_gate_1_rejects_undelivered(tmp_path: Path) -> None:
     """无实测即合并——闸 1。"""
     s = _delivered(tmp_path)
     s.tasks["T-D-1"].status = TaskState.IN_PROGRESS
-    r = request_merge(
+    r = _req(
         s, "T-D-1", branch="b", commit="c", requester="TL-D", changed_files=[], clock=1.0
     )
     assert not r.ok
@@ -128,7 +139,7 @@ def test_gate_1_rejects_undelivered(tmp_path: Path) -> None:
 def test_gate_2_rejects_out_of_scope(tmp_path: Path) -> None:
     """越范围合入——闸 2（条目白名单是 `data_access/**`，却改了 `broker_gateway/**`）。"""
     s = _delivered(tmp_path, changed=["data_access/ok.py"])
-    r = request_merge(
+    r = _req(
         s, "T-D-1", branch="b", commit="c", requester="TL-D",
         changed_files=["data_access/ok.py", "broker_gateway/other.py"], clock=1.0,
     )
@@ -141,7 +152,7 @@ def test_gate_3_rejects_unreadable_evidence(tmp_path: Path) -> None:
     s = _delivered(tmp_path)
     old = s.tasks["T-D-1"].evidence[-1]
     s.tasks["T-D-1"].evidence[-1] = replace(old, evidence_path=str(tmp_path / "gone.log"))
-    r = request_merge(
+    r = _req(
         s, "T-D-1", branch="b", commit="c", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], clock=1.0,
     )
@@ -160,7 +171,7 @@ def test_gate_3_rejects_nonzero_gate(tmp_path: Path) -> None:
 def test_gate_4_rejects_stale_base(tmp_path: Path) -> None:
     """过期基座合入——闸 4。"""
     s = _delivered(tmp_path)
-    r = request_merge(
+    r = _req(
         s, "T-D-1", branch="b", commit="c", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], base_commit="old123", main_head="new456",
         clock=1.0,
@@ -175,11 +186,11 @@ def test_gate_5_serializes_merges(tmp_path: Path) -> None:
     s = _delivered(tmp_path, "T-D-2", prior=s, whitelist=["broker_gateway/**"])
     assert s.tasks["T-D-1"].status == TaskState.DELIVERED
     assert s.tasks["T-D-2"].status == TaskState.DELIVERED
-    a = request_merge(
+    a = _req(
         s, "T-D-1", branch="b1", commit="c1", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], clock=1.0,
     )
-    b = request_merge(
+    b = _req(
         a.state, "T-D-2", branch="b2", commit="c2", requester="TL-D",
         changed_files=["broker_gateway/composition.py"], clock=2.0,
     )
@@ -198,11 +209,11 @@ def test_dispatch_is_fifo(tmp_path: Path) -> None:
     s = _delivered(tmp_path, "T-D-2", prior=s, whitelist=["broker_gateway/**"])
     assert s.tasks["T-D-1"].status == TaskState.DELIVERED
     assert s.tasks["T-D-2"].status == TaskState.DELIVERED
-    a = request_merge(
+    a = _req(
         s, "T-D-1", branch="b1", commit="c1", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], clock=1.0,
     )
-    b = request_merge(
+    b = _req(
         a.state, "T-D-2", branch="b2", commit="c2", requester="TL-D",
         changed_files=["broker_gateway/composition.py"], clock=2.0,
     )
@@ -218,7 +229,7 @@ def test_dispatch_is_fifo(tmp_path: Path) -> None:
 def test_conflict_is_rejected_and_becomes_action_item(tmp_path: Path) -> None:
     """**冲突是语义问题，不是时序问题**——拒绝并转动作项给 TL。"""
     s = _delivered(tmp_path)
-    r = request_merge(
+    r = _req(
         s, "T-D-1", branch="b", commit="c", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], clock=1.0,
     )
@@ -240,7 +251,7 @@ def test_conflict_is_rejected_and_becomes_action_item(tmp_path: Path) -> None:
 
 def test_complete_merge_marks_terminal(tmp_path: Path) -> None:
     s = _delivered(tmp_path)
-    r = request_merge(
+    r = _req(
         s, "T-D-1", branch="b", commit="c", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], clock=1.0,
     )
@@ -255,7 +266,7 @@ def test_complete_merge_marks_terminal(tmp_path: Path) -> None:
 def test_queue_status_is_observable(tmp_path: Path) -> None:
     """**不可观测的队列就是一条新的隐性依赖**。"""
     s = _delivered(tmp_path)
-    r = request_merge(
+    r = _req(
         s, "T-D-1", branch="b", commit="c", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], clock=1.0,
     )
@@ -273,10 +284,62 @@ def test_dispatch_on_empty_queue_is_rejected() -> None:
 def test_queue_item_does_not_hold_task_ownership(tmp_path: Path) -> None:
     """**`claim` 与 `request_merge` 必须解耦**——防等待环（方案 §6.4）。"""
     s = _delivered(tmp_path)
-    r = request_merge(
+    r = _req(
         s, "T-D-1", branch="b", commit="c", requester="TL-D",
         changed_files=["data_access/kline/follow.py"], clock=1.0,
     )
     # 入队不改变条目的认领人，也不把它标为终态
     assert r.state.tasks["T-D-1"].owner == "TL-D"
     assert r.state.tasks["T-D-1"].status == TaskState.DELIVERED
+
+
+# ---------------------------------------------------------------------------
+# 闸 4.5：迁移链位（**放号只保证号唯一，保证不了链位唯一**）
+# ---------------------------------------------------------------------------
+
+
+def _delivered_migration(tmp_path: Path):
+    """造一个**白名单允许迁移件**的已交付条目——这样闸 2 不会先把它拦掉。"""
+    s = _delivered(tmp_path)
+    s.tasks["T-D-1"].whitelist = ["alembic/versions/**"]
+    return s
+
+
+def test_chain_gate_blocks_forked_migration(tmp_path: Path) -> None:
+    """判据说"分叉"就拒——这就是"两个各自合法的迁移件合起来是两个 head"的收口点。"""
+    s = _delivered_migration(tmp_path)
+    r = _req(
+        s, "T-D-1", branch="dev/TD1", commit="b" * 8, requester="TL-D",
+        changed_files=["alembic/versions/0037_x.py"],
+        migration_check=lambda files, base: "[3] 有 2 个 head：['0037', '0038']——链位分叉",
+    )
+    assert not r.ok
+    assert r.event is not None
+    assert "E_INTEGRITY" in r.event.result, r.event.result
+
+
+def test_chain_gate_passes_when_judgement_is_clean(tmp_path: Path) -> None:
+    """负例锚点：判据说通过就必须能入队——否则这条闸是噪声。"""
+    s = _delivered_migration(tmp_path)
+    r = _req(
+        s, "T-D-1", branch="dev/TD1", commit="b" * 8, requester="TL-D",
+        changed_files=["alembic/versions/0037_x.py"],
+        migration_check=lambda files, base: "",
+    )
+    assert r.ok, r.event.result if r.event else ""
+
+
+def test_chain_gate_fails_closed_without_judgement(tmp_path: Path) -> None:
+    """**没有判据就拒**——宁可不合，也不假装通过。
+
+    注入点只有一个（CLI 的 `_migration_checker`）；若哪天漏了，故障方向是"合不进去"
+    （看得见、可修），而不是"分叉合进去了"（看不见、要回滚）。
+    """
+    s = _delivered_migration(tmp_path)
+    r = request_merge(
+        s, "T-D-1", branch="dev/TD1", commit="b" * 8, requester="TL-D",
+        changed_files=["alembic/versions/0037_x.py"],
+    )
+    assert not r.ok
+    assert r.event is not None
+    assert "E_INCOMPLETE" in r.event.result, r.event.result

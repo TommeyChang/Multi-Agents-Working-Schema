@@ -40,8 +40,9 @@ def check_gates(
     base_commit: str,
     main_head: str,
     evidence_path_ok: Callable[[str], bool] | None = None,
+    migration_check: Callable[[list[str], str], str] | None = None,
 ) -> MergeGates:
-    """六闸（方案 v2 §6.2）。
+    """七闸（方案 v2 §6.2 ＋ **链位闸**）。
 
     | # | 闸 | 治什么 |
     |---|---|---|
@@ -49,8 +50,13 @@ def check_gates(
     | 2 | commit 改动 ⊆ 条目白名单 | 越范围合入 |
     | 3 | 门禁实证存在且可核 | 证伪「台账先于核验」 |
     | 4 | 基座已含 main 最新 | 过期基座合入 |
+    | 4.5 | **迁移链位**（注入 `migration_check`） | 号唯一 ≠ 链位唯一：两个各自合法的件合起来是两个 head |
     | 5 | 同一时刻只有一次合并 | （由 dispatch 保证，不在此判） |
     | 6 | 内容冲突即拒 | 语义问题 ≠ 时序问题（由调用方判定后传入） |
+
+    `migration_check(changed_files, base_commit) -> str` 由调用方绑定目标仓
+    （判据在 `bg_coordinator/migrations.py`，与提交闸共用）。返回空串 = 通过。
+    **不注入即视为"无从判定"**——含迁移件的条目会被拒（宁可不合，也不假装通过）。
     """
     rej: list[Rejection] = []
 
@@ -117,6 +123,31 @@ def check_gates(
             )
         )
 
+    # 闸 4.5：链位（只在有判据可注入时给出确定结论；否则对含迁移件的条目 fail closed）
+    if migration_check is None:
+        rej.append(
+            Rejection(
+                Code.E_INCOMPLETE,
+                f"{task.id} 未提供迁移链判据——含迁移件的合入必须能判链位",
+                id=task.id,
+                owner=task.owner,
+                hint="调用方须注入 migration_check（判据见 bg_coordinator/migrations.py）",
+            )
+        )
+    else:
+        # 链位要对的是**即将落上去的那个 head**（main head），不是分支自己的基座
+        reason = migration_check(changed_files, main_head or base_commit)
+        if reason:
+            rej.append(
+                Rejection(
+                    Code.E_NUMBER_TWICE if "撞号" in reason else Code.E_INTEGRITY,
+                    f"{task.id} 迁移链不合规：{reason}",
+                    id=task.id,
+                    owner=task.owner,
+                    hint="把父节点接到当前 head 上并重新取号／落物，再入队",
+                )
+            )
+
     return MergeGates(passed=not rej, rejections=rej)
 
 
@@ -146,16 +177,23 @@ def request_merge(
     base_commit: str = "",
     main_head: str = "",
     evidence_path_ok: Callable[[str], bool] | None = None,
+    migration_check: Callable[[list[str], str], str] | None = None,
     clock: float = 0.0,
 ) -> Result:
-    """显式触发入队。**六闸不过即拒，且拒绝也是一条可追溯事件。**"""
+    """显式触发入队。**各闸不过即拒，且拒绝也是一条可追溯事件。**
+
+    `migration_check` 由调用方注入（目标仓不同，迁移图不同）——
+    判据在 `bg_coordinator/migrations.py`，与提交闸**同一处口径**。
+    """
     new = copy.deepcopy(state)
     ts = now_iso()
     task = new.tasks.get(task_id)
     if task is None:
         return _reject(new, ts, "request_merge", task_id, requester, Code.E_UNKNOWN_ID, "条目不存在")
 
-    gates = check_gates(new, task, changed_files, base_commit, main_head, evidence_path_ok)
+    gates = check_gates(
+        new, task, changed_files, base_commit, main_head, evidence_path_ok, migration_check
+    )
     if not gates.passed:
         first = gates.first
         assert first is not None

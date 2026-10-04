@@ -559,19 +559,31 @@ def cmd_reserve(args: argparse.Namespace) -> int:
     占号即推进水位，**别的线看到的是占号之后的号**——不会各自都选同一个。
     """
     from .engine import reserve_number
+    from .errors import Code, InflightError
 
     st = _store(args)
     st.init()
     with st.lock():
         state = st.load_state()
-        n, entry = reserve_number(
-            state,
-            family=args.family,
-            holder=args.holder,
-            ts=now_iso(),
-            task=args.task or "",
-            note=args.note or "",
-        )
+        try:
+            n, entry = reserve_number(
+                state,
+                family=args.family,
+                holder=args.holder,
+                ts=now_iso(),
+                task=args.task or "",
+                note=args.note or "",
+            )
+        except InflightError as exc:
+            # 串行族的放号闸：**结构化拒绝**，不写盘——账上什么都没发生
+            rej = Rejection(
+                Code.E_NUMBER_INFLIGHT,
+                str(exc),
+                owner=args.holder,
+                hint="等它 materialize／让号之后再取；该族的号顺序就是链位顺序",
+            )
+            print(str(rej), file=sys.stderr)
+            return 1
         st.save_state(state)
     print(format_id(args.family, n))
     if not args.json:
@@ -701,6 +713,47 @@ def cmd_leases(args: argparse.Namespace) -> int:
 # --- 合并 ---
 
 
+def _migration_checker(repo, commit: str):
+    """装配**链位判据**：读分支提交与 main 的迁移图，判有没有分叉／插队。
+
+    两个图都**从 git 读**（`git show <ref>:<路径>`）——合并时主检出停在 main，
+    分支的迁移件不在工作区里，只有 git 对象面里才有。
+    判据本身在 `bg_coordinator/migrations.py`（与提交闸共用，**一处口径**）。
+
+    绑定没有声明迁移目录 ⇒ 本工程没有"迁移件"这类改动 ⇒ 不适用（返回空串）。
+    """
+    from . import migrations as mig
+    from .binding import load as load_binding
+    from .binding import locate as locate_binding
+
+    if repo is None:
+        # 无目标仓 ⇒ 无图可判（且没有仓可读）。**不返回 None**：None 的语义是
+        # "调用方忘了注入"（fail closed），两者必须分清，否则无仓配置时全部合并被误拦。
+        return lambda changed_files, base: ""
+    _src, path = locate_binding(repo)
+    data: dict = {}
+    if path is not None:
+        loaded, _err = load_binding(path)
+        data = loaded or {}
+    mconf = data.get("migrations") if isinstance(data.get("migrations"), dict) else {}
+    vdir = str(mconf.get("dir") or "").strip()
+    if not vdir:
+        return lambda changed_files, base: ""  # 未声明迁移目录 ⇒ 本工程不适用
+
+    def check(changed_files: list[str], base: str) -> str:
+        if not any(f.startswith(vdir.rstrip("/") + "/") for f in changed_files):
+            return ""  # 本批没有迁移件
+        if not (commit and base):
+            return "含迁移件，但拿不到分支提交或 main head——链位无从确认"
+        rows, err1 = mig.load_from_git(repo, commit, vdir)
+        base_rows, err2 = mig.load_from_git(repo, base, vdir)
+        if err1 or err2:
+            return f"迁移图不可读（{err1 or err2}）——链位无从确认"
+        return "；".join(mig.judge(rows, base_rows, vdir))
+
+    return check
+
+
 def cmd_merge_request(args: argparse.Namespace) -> int:
     import time
 
@@ -717,6 +770,7 @@ def cmd_merge_request(args: argparse.Namespace) -> int:
             changed_files=_flat(args.changed),
             base_commit=args.base or "",
             main_head=args.main_head or "",
+            migration_check=_migration_checker(st.repo, args.commit),
             clock=time.time(),
         )
         if result.event:
