@@ -234,3 +234,86 @@ def test_queue_positions_are_visible() -> None:
     rows = queue_positions(c.state)
     assert [r["position"] for r in rows] == [1, 2]
     assert [r["db_name"] for r in rows] == ["d2", "d3"]
+
+
+# ---------------------------------------------------------------------------
+# 子代理授权：**授权就是一条租约**（可数、有界、会过期、能对账）
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_grant_counts_and_caps(store) -> None:
+    """**能开几个 = 手上有几张凭证**，超过上限即拒——散文里的"≤10"变成协调器的计数。"""
+    import time
+
+    from bg_coordinator.engine import active_grants, grant_dispatch
+    from bg_coordinator.readiness import Quota
+
+    state = store.load_state()
+    state.quota = Quota(enabled=True, per_line={"D": 9}, subagent_max_per_dispatcher=2)
+    now = time.time()
+
+    for i in range(2):
+        r = grant_dispatch(state, holder="TL-D", task_id=f"T-D-{i + 1}", line="D", clock=now)
+        assert r.ok, r.rejection
+        state = r.state
+    assert len(active_grants(state, "TL-D")) == 2
+
+    third = grant_dispatch(state, holder="TL-D", task_id="T-D-3", line="D", clock=now)
+    assert not third.ok
+    assert third.rejection.code.value == "E_UNAUTHORIZED_DISPATCH"
+    assert "上限 2" in third.rejection.message
+
+
+def test_dispatch_grant_is_per_task(store) -> None:
+    """**按条目授权**：同一条目一次派单一张——同条目复用子代理即可（复用不新开）。"""
+    import time
+
+    from bg_coordinator.engine import grant_dispatch
+
+    state = store.load_state()
+    now = time.time()
+    first = grant_dispatch(state, holder="TL-D", task_id="T-D-1", line="D", clock=now)
+    assert first.ok
+    again = grant_dispatch(first.state, holder="TL-D", task_id="T-D-1", line="D", clock=now)
+    assert not again.ok
+    assert "已有一张" in again.rejection.message
+
+
+def test_dispatch_grant_survives_reload(store) -> None:
+    """**授权要经得起落盘再读回**——曾经 `Lease.from_dict` 漏了 `task`，
+    于是"按条目只发一张"在第二次调用时形同虚设（只在内存里成立）。"""
+    import time
+
+    from bg_coordinator.engine import grant_dispatch
+
+    state = store.load_state()
+    r = grant_dispatch(state, holder="TL-D", task_id="T-D-1", line="D", clock=time.time())
+    assert r.ok
+    store.save_state(r.state)
+    if r.event:
+        store.append_event(r.event)
+
+    reloaded = store.load_state()
+    lease = next(iter(reloaded.leases.values()))
+    assert lease.task == "T-D-1", "task 字段在落盘/读回时丢了"
+
+
+def test_grant_has_no_pid_and_is_not_swept_as_dead(store) -> None:
+    """**无 pid 的租约不拿 pid 判死**（授权就是这样）——只看 TTL。
+
+    这条踩过：授权 `pid=0`，回收把 `pid_alive(0)` 当假 ⇒ 刚发的凭证被当死租约扫掉，
+    于是"同条目只发一张"与"上限计数"全部失效。
+    """
+    import time
+
+    from bg_coordinator.engine import _sweep_reclaimable, active_grants, grant_dispatch
+
+    state = store.load_state()
+    now = time.time()
+    r = grant_dispatch(state, holder="TL-D", task_id="T-D-1", line="D", clock=now, ttl=60)
+    assert r.ok
+    assert _sweep_reclaimable(r.state, now + 1) == [], "未过期就不该被扫"
+    assert len(active_grants(r.state)) == 1
+
+    # 过期才收（TTL 是它唯一的回收判据）
+    assert _sweep_reclaimable(r.state, now + 61) != []

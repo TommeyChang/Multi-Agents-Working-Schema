@@ -50,8 +50,18 @@ def _run(root: str, *argv: str) -> int:
     return main(["--root", root, *argv])
 
 
+def _budget(root: str, *lines: str, n: int = 8) -> None:
+    """批预算——**默认口径是"未批预算的线派不了活"**，所以凡要走到派单的用例都得先批。
+
+    这不是测试的麻烦，而是把线上口径照搬进来；要测"没批预算被拒"的用例**别调它**。
+    """
+    for ln in lines or ("A", "B", "C", "D", "E", "ACL", "OPS"):
+        assert _run(root, "quota", "--line", ln, "--budget", str(n)) == 0
+
+
 def test_init_then_health(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert _run(root, "init") == 0
+    _budget(root)
     out = capsys.readouterr().out
     assert "events.jsonl" in out
     assert "只准追加" in out
@@ -69,6 +79,7 @@ def test_health_without_init_fails(root: str, capsys: pytest.CaptureFixture[str]
 def test_register_then_status(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """**编号由协调器分配**——调用方只声明线别与类型。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     code = _run(
         root, "--json", "register", "--role", "po:po",
@@ -87,6 +98,7 @@ def test_rejection_goes_to_stderr_with_exit_1(
 ) -> None:
     """失败即一条带责任人的异常——不是栈回溯。"""
     _run(root, "init")
+    _budget(root)
     _register(root, capsys, role="po:po", line="D", title="t")
     code = _run(root, "claim-dev", "--id", "T-D-1", "--role", "tl:TL-D:D")
     assert code == 1
@@ -98,6 +110,7 @@ def test_rejection_goes_to_stderr_with_exit_1(
 def test_duplicate_register_is_rejected(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """重复提交由 **request_id 幂等**识别——编号由协调器发，撞号在结构上已不可能。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     argv = (
         "--json", "register", "--role", "po:po", "--title", "t",
@@ -123,6 +136,7 @@ def test_duplicate_register_is_rejected(root: str, capsys: pytest.CaptureFixture
 def test_full_lifecycle_via_cli(root: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """端到端七步全走 CLI——证明协调器是**唯一写入口**。"""
     _run(root, "init")
+    _budget(root)
     ev = tmp_path / "gate.log"
     ev.write_text("2182 passed", encoding="utf-8")
 
@@ -154,6 +168,7 @@ def test_full_lifecycle_via_cli(root: str, tmp_path: Path, capsys: pytest.Captur
 
 def test_trace_and_audit_and_report(root: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     ev = tmp_path / "g.log"
     ev.write_text("ok", encoding="utf-8")
     tid = _register(root, capsys, title="t", kind="T", priority="P1")
@@ -190,6 +205,7 @@ def test_trace_and_audit_and_report(root: str, tmp_path: Path, capsys: pytest.Ca
 
 def test_json_output_is_machine_readable(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     code = _run(
         root, "--json", "register", "--role", "po:po", "--title", "t", "--line", "D"
@@ -204,6 +220,7 @@ def test_json_output_is_machine_readable(root: str, capsys: pytest.CaptureFixtur
 def test_request_id_is_idempotent(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """幂等：同 request_id 重放不产生新事件、**也不发新号**。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     args = (
         "--json", "register", "--role", "po:po", "--title", "t", "--line", "D",
@@ -227,6 +244,7 @@ def test_request_id_is_idempotent(root: str, capsys: pytest.CaptureFixture[str])
 
 def test_expect_ver_blocks_stale_write(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     tid = _register(root, capsys, role="po:po", line="D", title="t", priority="P1", kind="T")
     for step in (
         ("claim-analyze", "--id", tid, "--role", "pm:pm-D:D"),
@@ -246,6 +264,7 @@ def test_lease_commands(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     import os
 
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(
         root, "acquire", "--holder", "w1", "--db-name", "bg_w1", "--pid", str(os.getpid())
@@ -254,11 +273,12 @@ def test_lease_commands(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert _run(root, "leases") == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["leases"][0]["db_name"] == "bg_w1"
-    assert payload["quota_enabled"] is False
+    assert payload["quota_enabled"] is True  # **默认即闸**
 
 
 def test_merge_commands(root: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     ev = tmp_path / "g.log"
     ev.write_text("ok", encoding="utf-8")
     tid = _register(root, capsys, title="t", kind="T", priority="P1")
@@ -298,6 +318,7 @@ def test_merge_commands(root: str, tmp_path: Path, capsys: pytest.CaptureFixture
 
 def test_audit_cli_shows_only_anomalies(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(root, "audit") == 0
     assert "（无异常）" in capsys.readouterr().out
@@ -305,6 +326,7 @@ def test_audit_cli_shows_only_anomalies(root: str, capsys: pytest.CaptureFixture
 
 def test_priority_command(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     tid = _register(root, capsys, title="t")
     assert _run(root, "priority", "--id", tid, "--role", "po:po", "--priority", "P0") == 0
     capsys.readouterr()
@@ -325,6 +347,7 @@ def test_bad_verb_is_usage_error(root: str) -> None:
 def _setup_defined(root: str, capsys: pytest.CaptureFixture[str]) -> str:
     """建一个已定稿的条目，**返回协调器分配的编号**。"""
     _run(root, "init")
+    _budget(root)
     tid = _register(root, capsys, role="po:po", line="D", title="K线取数", priority="P1")
     _run(root, "claim-analyze", "--id", tid, "--role", "pm:pm-D:D")
     _run(
@@ -360,6 +383,7 @@ def test_show_json_is_machine_readable(root: str, capsys: pytest.CaptureFixture[
 
 def test_show_unknown_id_fails(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(root, "show", "T-NOPE") == 1
     assert "未找到" in capsys.readouterr().err
@@ -388,6 +412,7 @@ def test_repeatable_flags_accumulate(root: str, capsys: pytest.CaptureFixture[st
     这会让人以为条目的约束齐全，实际只剩最后一条。
     """
     _run(root, "init")
+    _budget(root)
     tid = _register(root, capsys, title="t")
     _run(root, "claim-analyze", "--id", tid, "--role", "pm:pm-D:D")
     code = _run(
@@ -415,6 +440,7 @@ def test_quota_command_takes_effect(root: str, capsys: pytest.CaptureFixture[str
     import os
 
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
 
     assert _run(root, "quota", "--enabled", "true", "--bg-db-max", "1") == 0
@@ -434,6 +460,7 @@ def test_leases_shows_queue(root: str, capsys: pytest.CaptureFixture[str]) -> No
     import os
 
     _run(root, "init")
+    _budget(root)
     _run(root, "quota", "--enabled", "true", "--bg-db-max", "1")
     pid = str(os.getpid())
     _run(root, "acquire", "--holder", "w1", "--db-name", "d1", "--pid", pid)
@@ -455,6 +482,7 @@ def test_leases_shows_queue(root: str, capsys: pytest.CaptureFixture[str]) -> No
 def test_register_has_no_id_argument(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """**代理没有挑号的入口**：`register` 不接受 `--id`。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     with pytest.raises(SystemExit):
         main([
@@ -466,6 +494,7 @@ def test_register_has_no_id_argument(root: str, capsys: pytest.CaptureFixture[st
 def test_register_requires_line(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """编号按线分配 ⇒ 没有线别就无法发号（由参数层直接拒绝）。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     with pytest.raises(SystemExit):
         main(["--root", root, "register", "--role", "po:po", "--title", "t"])
@@ -474,6 +503,7 @@ def test_register_requires_line(root: str, capsys: pytest.CaptureFixture[str]) -
 def test_ids_are_per_family(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """族 = 类型 ＋ 线码：**线内独立计数，族间互不影响**。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     d_r = _register(root, capsys, line="D", title="需求")
     d_t = _register(root, capsys, line="D", title="任务", kind="T")
@@ -486,6 +516,7 @@ def test_concurrent_registration_never_collides(root: str) -> None:
     import concurrent.futures
 
     _run(root, "init")
+    _budget(root)
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         codes = list(
             pool.map(
@@ -509,6 +540,7 @@ def test_concurrent_registration_never_collides(root: str) -> None:
 def test_number_command_reports_gaps(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """`number` 给的是**这笔资源的账**：各族最大号、已分配数、以及有号无物的空洞。"""
     _run(root, "init")
+    _budget(root)
     _register(root, capsys, line="D", title="甲")
     _register(root, capsys, line="D", title="乙", kind="T")
     capsys.readouterr()
@@ -530,6 +562,7 @@ def test_reserve_channel_is_gone(root: str, capsys: pytest.CaptureFixture[str]) 
     审计还报"无异常"——号就成了垃圾桶。号是资源，发号必须同时产生对应物。
     """
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     with pytest.raises(SystemExit):
         main(["--root", root, "number", "--reserve", "--count", "3"])
@@ -540,6 +573,7 @@ def test_out_of_band_number_advance_is_reported(root: str, capsys: pytest.Captur
     from bg_coordinator.storage import Store
 
     _run(root, "init")
+    _budget(root)
     _register(root, capsys, line="D", title="甲")
 
     # 人为制造空洞：簿记推进，但账上没有对应物
@@ -572,6 +606,7 @@ def test_two_phase_reserve_then_materialize(root: str, capsys: pytest.CaptureFix
        放号时收口，比合并时返工便宜得多（合并时分支已推、评审已过、窗口已排）。
     """
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
 
     assert _run(root, "reserve", "--family", "alembic", "--holder", "dev-A", "--task", "T-A-86") == 0
@@ -614,6 +649,7 @@ def test_pending_allocation_without_task_is_an_anomaly(
 ) -> None:
     """**无归属的待建号是资源被占着不动**——审计必须报。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     _run(root, "reserve", "--family", "alembic", "--holder", "dev-A")
     capsys.readouterr()
@@ -625,6 +661,7 @@ def test_pending_allocation_without_task_is_an_anomaly(
 def test_release_number_requires_reason(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """让号必须给理由——否则与静默丢弃无异。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     _run(root, "reserve", "--family", "alembic", "--holder", "dev-A", "--task", "T-A-1")
     capsys.readouterr()
@@ -648,6 +685,7 @@ def test_release_number_requires_reason(root: str, capsys: pytest.CaptureFixture
 def test_released_number_is_not_a_gap(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """**已让号不算空洞**——它有账、有理由。真问题是"无账之号"。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     _run(root, "reserve", "--family", "alembic", "--holder", "dev-A", "--task", "T-A-1")
     _run(
@@ -665,6 +703,7 @@ def test_task_families_are_materialized_immediately(
 ) -> None:
     """三类号统一管理，但**任务与需求一登记即落物**——不留待建。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     _register(root, capsys, line="D", title="需求")
     _register(root, capsys, line="D", title="任务", kind="T")
@@ -685,6 +724,7 @@ def test_task_families_are_materialized_immediately(
 def test_dev_lines_are_manageable(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """**线的数量与划分由任务决定**——新线开在协调器里，不开在代码里。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
 
     assert _run(root, "--json", "line") == 0
@@ -702,6 +742,7 @@ def test_dev_lines_are_manageable(root: str, capsys: pytest.CaptureFixture[str])
 
 def test_unregistered_line_is_rejected(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(root, "register", "--role", "po:po", "--title", "x", "--line", "ZZZ") == 1
     err = capsys.readouterr().err
@@ -711,6 +752,7 @@ def test_unregistered_line_is_rejected(root: str, capsys: pytest.CaptureFixture[
 
 def test_duplicate_line_add_is_rejected(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(root, "line", "--add", "PAY") == 0
     capsys.readouterr()
@@ -721,6 +763,7 @@ def test_duplicate_line_add_is_rejected(root: str, capsys: pytest.CaptureFixture
 def test_requirement_origin_is_classified(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """**输入源必须可分类**——否则回答不了"这事是谁提的"。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     cases = [
         ("commander", "用户原话：要能看 K 线"),
@@ -753,6 +796,7 @@ def test_development_feedback_is_traceable(root: str, capsys: pytest.CaptureFixt
     "这条需求是从哪来的"必须能回答。
     """
     _run(root, "init")
+    _budget(root)
     tid = _register(root, capsys, line="D", title="原始开发任务", kind="T", priority="P1")
 
     # 开发中发现缺口 ⇒ 登记新需求，绑定来源条目
@@ -780,6 +824,7 @@ def test_intra_line_raise_bypasses_po(root: str, capsys: pytest.CaptureFixture[s
     PO 中转不增加信息，只增加时延。
     """
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(
         root, "--json", "raise", "--role", "tl:TL-D:D", "--category", "technical",
@@ -808,6 +853,7 @@ def test_intra_line_raise_bypasses_po(root: str, capsys: pytest.CaptureFixture[s
 def test_intra_line_requires_all_four_elements(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """本线自决 = 你直接把它变成可开发任务 ⇒ **四要素不能缺**。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(
         root, "raise", "--role", "tl:TL-D:D", "--category", "technical",
@@ -821,6 +867,7 @@ def test_intra_line_requires_all_four_elements(root: str, capsys: pytest.Capture
 def test_cross_line_raise_routes_to_po(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """**越线必须上 PO**——跨线权衡是 PO 的活。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(
         root, "--json", "raise", "--role", "tl:TL-D:D", "--category", "cross_line",
@@ -843,6 +890,7 @@ def test_intra_line_cannot_land_on_another_line(
 ) -> None:
     """**本线自决不能落别人的线**——那是越线，须走 cross_line 交 PO。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(
         root, "raise", "--role", "tl:TL-D:D", "--category", "technical",
@@ -855,6 +903,7 @@ def test_intra_line_cannot_land_on_another_line(
 def test_raise_requires_scope_declaration(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """影响面是必填——**它决定去向**，不能默认。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     with pytest.raises(SystemExit):
         main([
@@ -870,6 +919,7 @@ def test_raise_requires_scope_declaration(root: str, capsys: pytest.CaptureFixtu
 def test_technical_issue_is_tl_decidable(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """技术问题（怎么实现、内部怎么拆、用既有契约的哪种形态）⇒ TL 自决。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(
         root, "--json", "raise", "--role", "tl:TL-D:D", "--category", "technical",
@@ -889,6 +939,7 @@ def test_design_issue_cannot_be_self_determined(
     设计问题 = 契约／领域模型／口径／标准／阈值，归 PM，经 PO 转化。
     """
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(
         root, "raise", "--role", "tl:TL-D:D", "--category", "design",
@@ -903,6 +954,7 @@ def test_design_issue_cannot_be_self_determined(
 def test_design_issue_routes_to_po(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """设计问题**自动上 PO**——不声明 scope 也不会落到 TL 手里。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(
         root, "--json", "raise", "--role", "tl:TL-D:D", "--category", "design",
@@ -921,6 +973,7 @@ def test_design_issue_routes_to_po(root: str, capsys: pytest.CaptureFixture[str]
 
 def test_cross_line_issue_routes_to_po(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     assert _run(
         root, "--json", "raise", "--role", "tl:TL-D:D", "--category", "cross_line",
@@ -932,6 +985,7 @@ def test_cross_line_issue_routes_to_po(root: str, capsys: pytest.CaptureFixture[
 def test_raise_requires_category(root: str, capsys: pytest.CaptureFixture[str]) -> None:
     """**类别决定去向**，不能默认——默认成 TL 会让越权静默发生。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     with pytest.raises(SystemExit):
         main(["--root", root, "raise", "--role", "tl:TL-D:D", "--title", "x"])
@@ -984,6 +1038,7 @@ def test_doc_revision_is_not_mandatory(
 ) -> None:
     """**文档修订不是必做动作**——纯内部实现改动，不碰文档也不报异常。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     tid = _deliver_with(root, capsys, tmp_path, ["a/impl.py"])
     assert _run(root, "--json", "show", tid) == 0
@@ -998,6 +1053,7 @@ def test_design_surface_without_doc_is_reported(
 ) -> None:
     """**改了面就必须同批改文档**——触碰设计面而本批无文档 ⇒ 异常。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     _deliver_with(root, capsys, tmp_path, ["a/ports.py"])
 
@@ -1012,6 +1068,7 @@ def test_design_surface_with_doc_is_fine(
 ) -> None:
     """成对即可——改了面同时改了文档，不报异常。"""
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     tid = _deliver_with(root, capsys, tmp_path, ["a/ports.py", "docs/DATA_ACCESS.md"])
 
@@ -1067,6 +1124,7 @@ def test_publish_without_repo_writes_nothing(
     # 先摘掉环境变量：否则这个测试自己会往别人声明的仓库里写
     monkeypatch.delenv("BG_COORDINATOR_REPO", raising=False)
     _run(root, "init")
+    _budget(root)
     capsys.readouterr()
     rc = main(["--root", root, "publish", "--no-commit"])
     captured = capsys.readouterr()

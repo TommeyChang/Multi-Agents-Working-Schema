@@ -348,8 +348,10 @@ class Lease:
     """
 
     lease_id: str
-    klass: str  # bg_db | test_slot | disk
+    klass: str  # bg_db | test_slot | disk | **subagent**（派单授权）
     holder: str
+    #: 授权类租约绑定的**条目**——按条目授权：一次派单一条，销账时对得上
+    task: str = ""
     db_name: str = ""
     pid: int = 0
     n: int = 1
@@ -364,6 +366,7 @@ class Lease:
             "lease_id": self.lease_id,
             "klass": self.klass,
             "holder": self.holder,
+            "task": self.task,
             "db_name": self.db_name,
             "pid": self.pid,
             "n": self.n,
@@ -380,6 +383,7 @@ class Lease:
             lease_id=d["lease_id"],
             klass=d["klass"],
             holder=d.get("holder", ""),
+            task=d.get("task", ""),
             db_name=d.get("db_name", ""),
             pid=d.get("pid", 0),
             n=d.get("n", 1),

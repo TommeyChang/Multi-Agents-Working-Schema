@@ -18,7 +18,7 @@ from pathlib import Path
 from .audit import Anomaly, audit_summary
 from .engine import State
 from .models import CATEGORY_OWNER, LeaseState, Line, MergeState, Role, TaskState
-from .readiness import Quota, ready_tasks
+from .readiness import ready_tasks
 from .statemachine import to_legacy_token
 
 LINES: tuple[Line, ...] = (Line.A, Line.B, Line.C, Line.D, Line.E, Line.ACL)
@@ -238,8 +238,8 @@ def render_report(state: State, clock: float = 0.0) -> str:
     active = [ls for ls in state.leases.values() if ls.state == LeaseState.ACTIVE]
     recl = [ls for ls in state.leases.values() if ls.state == LeaseState.RECLAIMABLE]
     out.append(
-        f"| scratch 库 | {len(active)} | {state.quota.bg_db_max if state.quota.enabled else '（未启用）'} "
-        f"| {len(recl)} | {'配额闸未启用，仅观测' if not state.quota.enabled else ''} |\n"
+        f"| scratch 库 | {len(active)} | {state.quota.bg_db_max if state.quota.enabled else '（观测态）'} "
+        f"| {len(recl)} | {'配额闸已启用（默认即闸）' if state.quota.enabled else '观测态：不拦，仅记录'} |\n"
     )
     q = [m for m in state.merges.values() if m.state == MergeState.QUEUED]
     merging = [m for m in state.merges.values() if m.state == MergeState.MERGING]
@@ -272,13 +272,29 @@ def render_report(state: State, clock: float = 0.0) -> str:
 
 
 def render_todo_ready(state: State, role: Role = Role.TECH_LEAD) -> str:
-    """给 TL／监视器用的「现在可认领」清单——`delta_since` 的落地形态。"""
+    """给 TL／监视器用的「现在可认领」清单——`delta_since` 的落地形态。
+
+    **配额取 `state.quota`**：这里曾经硬编码 `Quota()`，于是清单永远不反映真实预算——
+    配额闸一变（默认由观测改为"未批预算派不了活"），清单却照旧，视图与闸各说各话。
+    """
     out: list[str] = []
+    unbudgeted: list[str] = []
     for line in LINES:
-        ready = ready_tasks(state.tasks, role, line, Quota())
+        if state.quota.enabled and state.quota.budget_of(line) is None:
+            unbudgeted.append(line.value)
+        ready = ready_tasks(state.tasks, role, line, state.quota)
         if ready:
             out.append(f"{line.value}: " + "、".join(f"{t.id}({t.priority})" for t in ready))
-    return "\n".join(out) or "（无可认领条目）"
+    if out:
+        return "\n".join(out)
+    if unbudgeted:
+        # **不许给一个空清单就完事**：空是因为"没预算"，必须说出来
+        return (
+            "（无可认领条目——其中 "
+            + "、".join(unbudgeted)
+            + " 线**未批预算**，按口径不派活：`coord quota --line <线> --budget <n>`）"
+        )
+    return "（无可认领条目）"
 
 
 def human_summary(state: State) -> str:

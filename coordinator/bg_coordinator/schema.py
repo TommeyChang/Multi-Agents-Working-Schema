@@ -208,6 +208,7 @@ READ_VERBS: tuple[str, ...] = (
     "quota",
     "verify-state",
     "bind",
+    "grants",
 )
 
 #: 资源动词：不经状态机，走租约自己的生命周期。
@@ -218,6 +219,7 @@ RESOURCE_VERBS: tuple[str, ...] = (
     "reserve",
     "materialize",
     "release-number",
+    "dispatch",
 )
 
 #: 合并队列动词。

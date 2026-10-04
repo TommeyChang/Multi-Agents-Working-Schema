@@ -290,7 +290,9 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
     for ls in state.leases.values():
         if ls.state == LeaseState.ACTIVE:
             holders[ls.holder] = holders.get(ls.holder, 0) + 1
-            if not pid_alive(ls.pid):
+            # **无 pid 的租约不拿 pid 判死**（如子代理授权）：只看 TTL。
+            # 与 `_sweep_reclaimable` 同一取向——判据缺失时偏"少回收、不误杀"。
+            if ls.pid > 0 and not pid_alive(ls.pid):
                 out.append(
                     Anomaly(
                         Code.E_IN_USE,
@@ -429,6 +431,26 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
                     f"在飞占号 {len(flying)} 个：{nums}——该族必须串行落物（号顺序＝链位顺序）",
                     owner="dba",
                     hint="只留一个在飞：其余 materialize 或让号（须给理由）",
+                )
+            )
+
+    # 11.8 **在办但无子代理授权**——"开了几个"不能只靠自报
+    #
+    #     在办意味着**有人在做**；而按本体系的口径，做的人要么是独立会话，
+    #     要么是**领了授权的子代理**。没凭证的在办 = 越权派单或漏领凭证，
+    #     两种都该被看见（子代理不得自开，见 SUBAGENT.md §一）。
+    from .engine import active_grants
+
+    granted_tasks = {ls.task for ls in active_grants(state) if ls.task}
+    for t in sorted(state.tasks.values(), key=lambda x: x.id):
+        if t.in_flight() and t.id not in granted_tasks:
+            out.append(
+                Anomaly(
+                    Code.E_UNAUTHORIZED_DISPATCH,
+                    t.id,
+                    "在办但没有在手的子代理授权",
+                    owner=t.owner,
+                    hint="先领凭证：coord dispatch --role <派单方> --task <条目号>",
                 )
             )
 

@@ -32,3 +32,17 @@ def repo(tmp_path: Path) -> Path:
 
 def actor(role: Role = Role.TECH_LEAD, name: str = "tl-D", line: Line | None = Line.D) -> Actor:
     return Actor(role=role, name=name, line=line)
+
+
+def budgeted(state, budget: int = 8):
+    """给测试状态批一套预算（**内置线各 8 个在办**）。
+
+    默认口径是「**未批预算的线派不了活**」（`Quota.enabled=True`）——
+    凡是要走到 `claim-dev` 的测试都必须先批。这不是测试的麻烦，
+    而是把线上口径照搬进测试；**要测"未批预算被拒"的用例别用它**，直接用 `State()`。
+    """
+    from bg_coordinator.models import Line as _Line
+    from bg_coordinator.readiness import Quota
+
+    state.quota = Quota(enabled=True, per_line={ln.value: budget for ln in _Line})
+    return state

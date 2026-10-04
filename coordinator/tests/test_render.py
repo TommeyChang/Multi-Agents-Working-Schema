@@ -178,16 +178,31 @@ def test_report_snapshot_point_is_shown(tmp_path: Path) -> None:
     assert "快照点" in text
 
 
-def test_report_shows_quota_not_enabled(tmp_path: Path) -> None:
+def test_report_quota_line_reflects_gate(tmp_path: Path) -> None:
+    """报告里的配额一行必须**说实话**：默认即闸／观测态是两回事。
+
+    默认口径从"只观测"改成了"未批预算派不了活"，这一行也得跟着变——
+    **报告不许与闸各说各话**（那正是"视图不反映实际"的老毛病）。
+    """
     s = _state_with_task(tmp_path)
-    text = render_report(s)
-    assert "未启用" in text or "仅观测" in text
+    assert "默认即闸" in render_report(s)
+    s.quota.enabled = False
+    assert "观测态" in render_report(s)
 
 
 def test_ready_list_only_lists_ready(tmp_path: Path) -> None:
-    s = _state_with_task(tmp_path)
+    from conftest import budgeted
+
+    s = budgeted(_state_with_task(tmp_path))  # 默认口径：未批预算派不了活
     text = render_todo_ready(s, role=Role.TECH_LEAD)
     assert "T-D-1" in text  # P1 且白名单无冲突 ⇒ 可认领
+
+
+def test_ready_list_says_why_when_unbudgeted(tmp_path: Path) -> None:
+    """**空清单必须说明为什么空**——"没批预算"不能表现成"没有活"。"""
+    s = _state_with_task(tmp_path)
+    text = render_todo_ready(s, role=Role.TECH_LEAD)
+    assert "未批预算" in text, text
 
 
 def test_unknown_line_header_does_not_crash() -> None:

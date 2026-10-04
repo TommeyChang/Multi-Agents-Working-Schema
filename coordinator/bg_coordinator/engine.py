@@ -1341,6 +1341,121 @@ def _grant(
     return Result(ok=True, state=new, event=ev, detail={"lease_id": lease_id, "db_name": db_name})
 
 
+def _actor_of(holder: str) -> Actor:
+    """把 `role:name[:line]` 解析成 Actor——拒绝事件要带责任人。"""
+    try:
+        return Actor.from_str(holder)
+    except Exception:  # noqa: BLE001 - 解析不了就当匿名，拒绝照样留痕
+        return Actor(role=Role.COMMANDER, name=holder, line=None)
+
+
+#: 子代理授权的租约类别——**授权就是一条租约**：有 id、有持有者、有上限、有到期、要销账。
+SUBAGENT_KLASS = "subagent"
+
+
+def active_grants(state: State, holder: str = "") -> list[Lease]:
+    """在手的子代理授权（可按派单方过滤）——**这就是"开了几个子代理"的可数事实**。"""
+    return [
+        ls
+        for ls in state.leases.values()
+        if ls.klass == SUBAGENT_KLASS
+        and ls.state == LeaseState.ACTIVE
+        and (not holder or ls.holder == holder)
+    ]
+
+
+def grant_dispatch(
+    state: State,
+    holder: str,
+    task_id: str,
+    line: str,
+    clock: float,
+    ttl: float = 3600.0,
+) -> Result:
+    """**派单授权**（按条目）：给"开一个子代理"发一张凭证。
+
+    为什么它必须是协调器里的记录，而不是文档里的一句话：
+
+    - **可数**：`active_grants(state, holder)` 就是"这个人现在手上几个子代理"，
+      不用问任何人、也不靠自报；
+    - **有界**：超过 `quota.subagent_max_per_dispatcher` 即拒——
+      这条以前只写在 `rules/SUBAGENT.md`（"累计 ≤10"），散文拦不住任何东西；
+    - **会过期**：TTL 到了自动回收（复用租约的 `_sweep_reclaimable`），
+      避免"授权挂着但人早走了"；
+    - **可对账**：在办条目若没有在手授权，审计报 `E_UNAUTHORIZED_DISPATCH`。
+
+    **按条目授权**：一次派单一条（与"一个子代理一条目"同粒度），销账时对得上。
+    """
+    new = copy.deepcopy(state)
+    ts = now_iso()
+    _sweep_reclaimable(new, clock)
+    _drop_expired_waiters(new, clock)
+
+    if not new.quota.enabled:
+        # 观测态：不拦，但也不假装授权成功——凭证照样发，方便先观测后收紧
+        pass
+    held = active_grants(new, holder)
+    limit = new.quota.subagent_max_per_dispatcher
+    if len(held) >= limit:
+        return _reject(
+            new,
+            ts,
+            "dispatch",
+            task_id,
+            _actor_of(holder),
+            None,
+            "",
+            Rejection(
+                Code.E_UNAUTHORIZED_DISPATCH,
+                f"{holder} 手上的子代理授权已达上限 {limit}（在手 {len(held)}）",
+                id=task_id,
+                owner=holder,
+                hint="先等子代理回报销账，或显式调高 quota 的 subagent_max_per_dispatcher",
+            ),
+        )
+    if any(ls.task == task_id for ls in active_grants(new)):
+        return _reject(
+            new,
+            ts,
+            "dispatch",
+            task_id,
+            _actor_of(holder),
+            None,
+            "",
+            Rejection(
+                Code.E_UNAUTHORIZED_DISPATCH,
+                f"条目 {task_id} 已有一张在手授权（按条目授权：一次派单一张）",
+                id=task_id,
+                owner=holder,
+                hint="同一条目复用一个子代理即可——复用不新开（见 SUBAGENT.md §七）",
+            ),
+        )
+
+    lease_id = f"L-{uuid.uuid4().hex[:12]}"
+    new.leases[lease_id] = Lease(
+        lease_id=lease_id,
+        klass=SUBAGENT_KLASS,
+        holder=holder,
+        task=task_id,
+        created_at=clock,
+        ttl=ttl,
+        state=LeaseState.ACTIVE,
+    )
+    new.seq += 1
+    ev = Event(
+        seq=new.seq,
+        ts=ts,
+        verb="dispatch",
+        id=lease_id,
+        actor=holder,
+        before={},
+        after={"state": "active", "task": task_id, "line": line},
+        result="ok",
+        detail={"lease_id": lease_id, "task": task_id, "ttl": ttl, "line": line},
+    )
+    return Result(ok=True, state=new, event=ev, detail={"lease_id": lease_id, "task": task_id})
+
+
 def release_lease(
     state: State, lease_id: str, holder: str, clock: float | None = None
 ) -> Result:
@@ -1416,12 +1531,18 @@ def pid_alive(pid: int) -> bool:
 
 
 def _sweep_reclaimable(state: State, clock: float) -> list[str]:
-    """把已死／过期的 active 租约标为 reclaimable。返回本次新标的 id。"""
+    """把已死／过期的 active 租约标为 reclaimable。返回本次新标的 id。
+
+    **没有 pid 就不拿 pid 判死**（`pid <= 0` ⇒ 只看 TTL）。
+    依据：判据缺失时的失败方向必须一致地偏"少回收、不误杀"——
+    这条闸曾经把**刚发的子代理授权**当成死租约扫掉（授权没有 pid，
+    而 `pid_alive(0)` 为假），于是"同条目只发一张"在第二次调用时形同虚设。
+    """
     marked: list[str] = []
     for ls in state.leases.values():
         if ls.state != LeaseState.ACTIVE:
             continue
-        if not pid_alive(ls.pid):
+        if ls.pid > 0 and not pid_alive(ls.pid):
             ls.state = LeaseState.RECLAIMABLE
             ls.reason = "holder pid 已死"
             marked.append(ls.lease_id)

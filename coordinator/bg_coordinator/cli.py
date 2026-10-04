@@ -459,6 +459,90 @@ def cmd_bind(args: argparse.Namespace) -> int:
     return 0 if info["status"] == "完整" else 1
 
 
+def cmd_dispatch(args: argparse.Namespace) -> int:
+    """**派单授权**：开子代理前先领凭证（按条目一张）。
+
+    以前"能开几个"只写在 `rules/SUBAGENT.md` 的散文里（"累计 ≤10"），
+    指望每个会话自己数——**散文拦不住任何东西**。现在它是协调器里的一条租约：
+    可数、有界、会过期、能对账；在办条目没有在手授权，审计会报出来。
+    """
+    import time
+
+    from .engine import grant_dispatch
+    from .models import canonical_role
+    from .schema import ROLES
+
+    role_key = canonical_role(args.role.split(":")[0])
+    spec = next((r for r in ROLES if r.key == role_key), None)
+    if spec is None:
+        print(f"[E_UNAUTHORIZED_DISPATCH] 未登记的角色：{args.role}", file=sys.stderr)
+        return 1
+    if not spec.can_dispatch:
+        print(
+            f"[E_UNAUTHORIZED_DISPATCH] {role_key} 没有派单权——子代理不能开子代理",
+            file=sys.stderr,
+        )
+        return 1
+
+    st = _store(args)
+    st.init()
+    with st.lock():
+        state = st.load_state()
+        task = state.tasks.get(args.task)
+        if task is None:
+            print(f"[E_UNKNOWN_ID] 条目不存在：{args.task}", file=sys.stderr)
+            return 1
+        line = str(task.line)
+        result = grant_dispatch(
+            state, holder=args.role, task_id=args.task, line=line,
+            clock=time.time(), ttl=args.ttl,
+        )
+        if result.event:
+            st.append_event(result.event)
+        st.save_state(result.state)
+    return _emit(result, args.json)
+
+
+def cmd_grants(args: argparse.Namespace) -> int:
+    """在手授权一览——**"现在开了几个子代理"这个问题的唯一答案**。"""
+    import time
+
+    from .engine import active_grants
+
+    st = _store(args)
+    state = st.load_state()
+    now = time.time()
+    rows = active_grants(state)
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "count": len(rows),
+                    "limit": state.quota.subagent_max_per_dispatcher,
+                    "grants": [
+                        {
+                            "lease_id": ls.lease_id,
+                            "holder": ls.holder,
+                            "task": ls.task,
+                            "age_s": int(now - ls.created_at),
+                            "ttl_s": int(ls.ttl),
+                        }
+                        for ls in rows
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+    print(f"在手子代理授权 {len(rows)} ／ 上限 {state.quota.subagent_max_per_dispatcher}")
+    for ls in rows:
+        held = int(now - ls.created_at)
+        print(f"  {ls.lease_id}  {ls.holder:<24} {ls.task:<10} 已持 {held}s / TTL {int(ls.ttl)}s")
+    if not rows:
+        print("  （无。要开子代理先领凭证，见 coord dispatch --help）")
+    return 0
+
+
 def cmd_maws(args: argparse.Namespace) -> int:
     """打印 MAWS —— Multi-Agents Working Schema，**并与实现对账**。
 
@@ -635,6 +719,8 @@ def cmd_quota(args: argparse.Namespace) -> int:
         changes["test_slot"] = args.test_slot
     if args.total is not None:
         changes["total_in_flight"] = args.total
+    if args.subagent_max is not None:
+        changes["subagent_max_per_dispatcher"] = args.subagent_max
     if changes:
         q = st.set_quota(**changes)
         print(f"已更新配额：{json.dumps(q.to_dict(), ensure_ascii=False)}")
@@ -1151,6 +1237,17 @@ def build_parser() -> argparse.ArgumentParser:
     s_bind = sub.add_parser("bind", help="工程绑定状态（读：来源／缺口／各线工作面）")
     s_bind.set_defaults(func=cmd_bind)
 
+    s_disp = sub.add_parser("dispatch", help="派单授权（开子代理前领凭证，按条目一张）")
+    s_disp.add_argument("--role", required=True, help="派单方 role:name[:line]，如 tech-lead:TL-D:D")
+    s_disp.add_argument("--task", required=True, help="被派的条目号")
+    s_disp.add_argument("--ttl", type=float, default=3600.0, help="授权有效期秒（到期自动回收）")
+    s_disp.add_argument("--json", action="store_true")
+    s_disp.set_defaults(func=cmd_dispatch)
+
+    s_grants = sub.add_parser("grants", help="在手子代理授权一览（读）")
+    s_grants.add_argument("--json", action="store_true")
+    s_grants.set_defaults(func=cmd_grants)
+
     sub.add_parser("maws", help="打印 MAWS 并对账（Schema ↔ 实现）").set_defaults(func=cmd_maws)
 
     s_line = sub.add_parser("line", help="管理开发线（查看 / 新建）")
@@ -1184,6 +1281,10 @@ def build_parser() -> argparse.ArgumentParser:
     s_quota.add_argument("--enabled", type=lambda v: v.lower() in {"1", "true", "yes"}, default=None)
     s_quota.add_argument("--bg-db-max", type=int, default=None)
     s_quota.add_argument("--test-slot", type=int, default=None)
+    s_quota.add_argument(
+        "--subagent-max", type=int, default=None,
+        help="同一派单方同时在手的**子代理授权**上限（默认 10）",
+    )
     s_quota.add_argument("--line", default=None, help="给某条线批预算")
     s_quota.add_argument(
         "--budget", type=int, default=None,

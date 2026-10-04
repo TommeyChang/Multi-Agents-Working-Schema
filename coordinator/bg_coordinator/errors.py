@@ -26,6 +26,7 @@ class Code(StrEnum):
     E_NUMBER_PENDING = "E_NUMBER_PENDING"  # 待建号无归属
     E_NUMBER_TWICE = "E_NUMBER_TWICE"  # 同号双占：同族同号在账上出现两次
     E_NUMBER_INFLIGHT = "E_NUMBER_INFLIGHT"  # 同族已有在飞的占号：迁移件必须串行落地
+    E_UNAUTHORIZED_DISPATCH = "E_UNAUTHORIZED_DISPATCH"  # 子代理授权：无凭证／超上限／越权派单
     E_DOC_UNSYNCED = "E_DOC_UNSYNCED"  # 设计面动了但文档未同批
     E_DUP_ID = "E_DUP_ID"
     E_BAD_LINE = "E_BAD_LINE"

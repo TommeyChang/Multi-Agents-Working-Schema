@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from conftest import budgeted  # noqa: E402
 
 from bg_coordinator.engine import Params, State, alloc_number, apply, format_id
 from bg_coordinator.errors import Code
@@ -93,7 +94,7 @@ def _to_verified(state: State, tmp_path: Path, tid: str = "T-D-1") -> State:
 
 
 def test_full_lifecycle_reaches_accepted(tmp_path: Path) -> None:
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     task = s.tasks["T-D-1"]
     assert task.status == TaskState.VERIFIED
     assert task.kind == Kind.T  # R → T，**共用同一个 id**
@@ -107,7 +108,7 @@ def test_full_lifecycle_reaches_accepted(tmp_path: Path) -> None:
 
 def test_every_verb_emits_an_event(tmp_path: Path) -> None:
     """事件是协调器唯一的权威落地物——每个动作都必须留痕。"""
-    s = State()
+    s = budgeted(State())
     ev = tmp_path / "g.log"
     ev.write_text("ok", encoding="utf-8")
     verbs = ["register", "claim-analyze", "define", "claim-dev", "start", "deliver", "verify"]
@@ -131,7 +132,7 @@ def test_every_verb_emits_an_event(tmp_path: Path) -> None:
 
 def test_event_seq_is_monotonic(tmp_path: Path) -> None:
     """每次动作都递增 seq——事件序号的单调性。"""
-    s = State()
+    s = budgeted(State())
     seen: list[int] = []
     for verb, actor, params in (
         ("register", _po(), Params(title="t", line=Line.D, kind=Kind.R)),
@@ -150,7 +151,7 @@ def test_event_seq_is_monotonic(tmp_path: Path) -> None:
 
 
 def test_define_without_whitelist_is_rejected() -> None:
-    s = _run(State(), "register", "T-D-1", _po(), Params(title="t", line=Line.D, kind=Kind.R)).state
+    s = _run(budgeted(State()), "register", "T-D-1", _po(), Params(title="t", line=Line.D, kind=Kind.R)).state
     s = _run(s, "claim-analyze", "T-D-1", _pm()).state
     r = apply(s, "define", "T-D-1", _pm(), params=Params(acceptance=_acceptance(), whitelist=[]))
     assert not r.ok
@@ -162,7 +163,7 @@ def test_define_without_whitelist_is_rejected() -> None:
 
 def test_claim_dev_requires_priority() -> None:
     """PO 的产出必须有承载——未定优先级不得派工。"""
-    s = _run(State(), "register", "T-D-1", _po(), Params(title="t", line=Line.D, kind=Kind.R)).state
+    s = _run(budgeted(State()), "register", "T-D-1", _po(), Params(title="t", line=Line.D, kind=Kind.R)).state
     s = _run(s, "claim-analyze", "T-D-1", _pm()).state
     s = _run(
         s, "define", "T-D-1", _pm(), Params(whitelist=["a/**"], frozen=[], acceptance=_acceptance())
@@ -175,7 +176,7 @@ def test_claim_dev_requires_priority() -> None:
 
 def test_claim_dev_rejected_when_dep_unfinished() -> None:
     s = _run(
-        State(), "register", "T-D-1", _po(), Params(title="dep", line=Line.D, kind=Kind.R)
+        budgeted(State()), "register", "T-D-1", _po(), Params(title="dep", line=Line.D, kind=Kind.R)
     ).state
     s = _run(
         s,
@@ -196,7 +197,7 @@ def test_claim_dev_rejected_when_dep_unfinished() -> None:
 
 def test_deliver_requires_evidence_path_and_gate() -> None:
     s2 = _run(
-        State(),
+        budgeted(State()),
         "register",
         "T-D-3",
         _po(),
@@ -238,7 +239,7 @@ def test_deliver_rejects_out_of_scope_changes() -> None:
     """越白名单交付即拒——「范围白名单」是可校验的，不是愿望。"""
     ev_path = Path("/tmp/does-not-matter.log")
     s = _run(
-        State(),
+        budgeted(State()),
         "register",
         "T-D-4",
         _po(),
@@ -269,7 +270,7 @@ def test_deliver_rejects_out_of_scope_changes() -> None:
 
 
 def test_accept_rejects_unmet_acceptance(tmp_path: Path) -> None:
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     # 人为把验收项改成引用不存在的证据
     s.tasks["T-D-1"].acceptance = [
         AcceptanceItem(type=AcceptanceType.EVIDENCE, path=str(tmp_path / "gone"))
@@ -280,7 +281,7 @@ def test_accept_rejects_unmet_acceptance(tmp_path: Path) -> None:
 
 
 def test_cannot_accept_without_verify(tmp_path: Path) -> None:
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     s.tasks["T-D-1"].status = TaskState.DELIVERED  # 人为回退到未校验
     r = apply(s, "accept", "T-D-1", _pm())
     assert not r.ok
@@ -298,7 +299,7 @@ def test_expect_ver_conflict_stops_stale_write() -> None:
     用 `start` 做探针：从 claimed 出发，第一次成功、同 `expect_ver` 的第二次必撞冲突。
     """
     s = _run(
-        State(),
+        budgeted(State()),
         "register",
         "T-D-1",
         _po(),
@@ -322,7 +323,7 @@ def test_expect_ver_conflict_stops_stale_write() -> None:
 
 def test_rejected_action_still_emits_an_event() -> None:
     """拒绝也要留痕——报告「异常」节的来源。"""
-    s = _run(State(), "register", "T-D-1", _po(), Params(title="t", line=Line.D, kind=Kind.R)).state
+    s = _run(budgeted(State()), "register", "T-D-1", _po(), Params(title="t", line=Line.D, kind=Kind.R)).state
     r = apply(s, "claim-dev", "T-D-1", _tl())
     assert not r.ok
     assert r.event is not None
@@ -332,7 +333,7 @@ def test_rejected_action_still_emits_an_event() -> None:
 
 
 def test_accepted_is_frozen(tmp_path: Path) -> None:
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     s = _run(s, "accept", "T-D-1", _pm()).state
     r = apply(s, "deliver", "T-D-1", _tl(), params=Params(commit="c", gate_cmd="x", gate_exit=0))
     assert not r.ok
@@ -340,7 +341,7 @@ def test_accepted_is_frozen(tmp_path: Path) -> None:
 
 
 def test_override_requires_reason(tmp_path: Path) -> None:
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     r = apply(s, "override", "T-D-1", Actor(role=Role.COMMANDER, name="c"), params=Params(reason=""))
     assert not r.ok
     assert r.rejection is not None and r.rejection.code == Code.E_NO_REASON
@@ -362,7 +363,7 @@ def test_override_requires_reason(tmp_path: Path) -> None:
 
 def test_rework_increments_round_and_keeps_history(tmp_path: Path) -> None:
     """返工：round +1，**失败轮次保留**（溯源需要，不是垃圾）——方案 §4.9.5。"""
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     ev2 = tmp_path / "gate2.log"
     ev2.write_text("ok", encoding="utf-8")
 
@@ -383,7 +384,7 @@ def test_rework_increments_round_and_keeps_history(tmp_path: Path) -> None:
 
 
 def test_block_remembers_and_unblock_restores(tmp_path: Path) -> None:
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     s = _run(s, "reverify", "T-D-1", _tl(), Params(reason="返工")).state  # → in_progress
     s = _run(s, "block", "T-D-1", _tl(), Params(reason="等外部依赖")).state
     assert s.tasks["T-D-1"].status == TaskState.BLOCKED
@@ -401,7 +402,10 @@ def test_block_remembers_and_unblock_restores(tmp_path: Path) -> None:
 
 def test_ops_completes_own_line() -> None:
     ops = Actor(role=Role.OPS, name="ops", line=Line.OPS)
-    s = _run(State(), "register", "OPS-1", ops, Params(title="巡检", line=Line.OPS, kind=Kind.T)).state
+    s = _run(
+        budgeted(State()), "register", "OPS-1", ops,
+        Params(title="巡检", line=Line.OPS, kind=Kind.T),
+    ).state
     r = apply(s, "complete", "OPS-1", ops, params=Params(reason="已执行留痕"))
     assert r.ok
     assert r.state.tasks["OPS-1"].status == TaskState.ACCEPTED
@@ -409,7 +413,10 @@ def test_ops_completes_own_line() -> None:
 
 def test_dba_review_completes() -> None:
     dba = Actor(role=Role.DBA, name="dba", line=Line.D)
-    s = _run(State(), "register", "T-D-5", dba, Params(title="迁移评审", line=Line.D, kind=Kind.T)).state
+    s = _run(
+        budgeted(State()), "register", "T-D-5", dba,
+        Params(title="迁移评审", line=Line.D, kind=Kind.T),
+    ).state
     r = apply(s, "review", "T-D-5", dba, params=Params(reason="评审通过"))
     assert r.ok
 
@@ -420,7 +427,7 @@ def test_dba_review_completes() -> None:
 
 
 def test_alloc_number_is_monotonic_and_atomic() -> None:
-    s = State()
+    s = budgeted(State())
     assert alloc_number(s, "T-D") == 1
     assert alloc_number(s, "T-D") == 2
     assert alloc_number(s, "T-D") == 3
@@ -428,7 +435,7 @@ def test_alloc_number_is_monotonic_and_atomic() -> None:
 
 
 def test_alloc_number_explicit_seq_wins() -> None:
-    s = State()
+    s = budgeted(State())
     assert alloc_number(s, "T-D", seq_alloc=100) == 100
     assert alloc_number(s, "T-D") == 101
 
@@ -447,7 +454,7 @@ def test_format_id(family: str, n: int, expected: str) -> None:
 
 
 def test_apply_does_not_mutate_input_state() -> None:
-    s = _run(State(), "register", "T-D-1", _po(), Params(title="t", line=Line.D, kind=Kind.R)).state
+    s = _run(budgeted(State()), "register", "T-D-1", _po(), Params(title="t", line=Line.D, kind=Kind.R)).state
     snapshot = s.to_dict()
     apply(s, "claim-analyze", "T-D-1", _pm())
     assert s.to_dict() == snapshot
@@ -464,7 +471,7 @@ def test_block_requires_reason(tmp_path: Path) -> None:
     理由：阻断是把一件在办的事停下来。没有原因，事后没人知道
     该由谁、在什么条件下解阻——这个阻断动作本身就没有信息。
     """
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     r = apply(s, "block", "T-D-1", _tl(), params=Params(reason="   "))
     assert not r.ok
     assert r.rejection is not None and r.rejection.code == Code.E_NO_REASON
@@ -472,7 +479,7 @@ def test_block_requires_reason(tmp_path: Path) -> None:
 
 
 def test_block_with_reason_records_it(tmp_path: Path) -> None:
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     r = apply(s, "block", "T-D-1", _tl(), params=Params(reason="等 DBA 评审回执"))
     assert r.ok
     task = r.state.tasks["T-D-1"]
@@ -482,7 +489,7 @@ def test_block_with_reason_records_it(tmp_path: Path) -> None:
 
 def test_reverify_requires_reason(tmp_path: Path) -> None:
     """返工不给原因 ⇒ 拒——与阻断同理：退回也要说清为什么。"""
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     r = apply(s, "reverify", "T-D-1", _tl(), params=Params(reason=""))
     assert not r.ok
     assert r.rejection is not None and r.rejection.code == Code.E_NO_REASON
@@ -491,7 +498,7 @@ def test_reverify_requires_reason(tmp_path: Path) -> None:
 
 def test_reverify_records_reason_in_chain(tmp_path: Path) -> None:
     """返工原因要进**证据链**，不能只留在对话里。"""
-    s = _to_verified(State(), tmp_path)
+    s = _to_verified(budgeted(State()), tmp_path)
     r = apply(s, "reverify", "T-D-1", _tl(), params=Params(reason="缺负例用例"))
     assert r.ok
     assert r.event is not None

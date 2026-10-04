@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from conftest import budgeted  # noqa: E402
 
 from bg_coordinator.engine import Params, State, apply
 from bg_coordinator.models import CATEGORY_OWNER, Actor, Kind, Line, Priority, Role, TaskState
@@ -142,7 +143,7 @@ def test_full_chain_closes_with_every_role(tmp_path: Path) -> None:
 
     pm = _actor(Role.PM, "pm-D")
     tl = _actor(Role.TECH_LEAD, "TL-D")
-    s = State()
+    s = budgeted(State())
 
     # ① 登记（任何人可登记；此处模拟 commander 转化来的形式化需求）
     s = _run(
@@ -221,7 +222,7 @@ def test_intra_line_technical_path_closes_without_po(tmp_path: Path) -> None:
     from bg_coordinator.models import AcceptanceItem, AcceptanceType
 
     r = apply(
-        State(), "raise", "", tl,
+        budgeted(State()), "raise", "", tl,
         params=Params(
             title="本线内部拆法调整", line=Line.D, scope="intra_line",
             category="technical", origin=None, source_ref="T-D-1 开发中发现",
@@ -254,7 +255,7 @@ def test_design_path_requires_po(tmp_path: Path) -> None:
     """**设计问题必须经 PO**——TL 自决会被拒，这是分权的闭环。"""
     tl = _actor(Role.TECH_LEAD, "TL-D")
     r = apply(
-        State(), "raise", "", tl,
+        budgeted(State()), "raise", "", tl,
         params=Params(
             title="改数据面契约", line=Line.D, scope="intra_line",
             category="design", whitelist=["data_access/ports.py"], acceptance=[],
@@ -268,7 +269,7 @@ def test_ops_and_dba_have_their_own_closed_paths() -> None:
     """OPS 与 DBA 各有自己的闭环——它们不经过 PO/TL 那条主链。"""
     ops = Actor(role=Role.OPS, name="ops", line="OPS")
     s = apply(
-        State(), "register", "", ops,
+        budgeted(State()), "register", "", ops,
         params=Params(title="巡检", line=Line.OPS, kind=Kind.T),
     ).state
     tid = next(iter(s.tasks))
@@ -277,7 +278,7 @@ def test_ops_and_dba_have_their_own_closed_paths() -> None:
 
     dba = Actor(role=Role.DBA, name="dba", line="D")
     s2 = apply(
-        State(), "register", "", dba,
+        budgeted(State()), "register", "", dba,
         params=Params(title="迁移评审", line=Line.D, kind=Kind.T),
     ).state
     tid2 = next(iter(s2.tasks))
@@ -330,28 +331,29 @@ def test_fanout_groups_disjoint_whitelists_together() -> None:
 
     这是"提高并行度"的机械前提——不同批的活同时开，必然两个子代理改同一片文件。
     """
-    from bg_coordinator.readiness import plan_fanout
+    from bg_coordinator.readiness import Quota, plan_fanout
 
     tasks = {
         "T-D-1": _task("T-D-1", ["a/**"]),
         "T-D-2": _task("T-D-2", ["b/**"]),
         "T-D-3": _task("T-D-3", ["c/**"]),
     }
-    plan = plan_fanout(tasks, "D")
+    # 默认口径是"未批预算派不了活"，所以**显式批预算**（这也是线上的样子）
+    plan = plan_fanout(tasks, "D", quota=Quota(enabled=True, per_line={"D": 3}))
     assert plan.total == 3
     assert plan.width == 3, "三条互不重叠的活应当同批可并行"
 
 
 def test_fanout_separates_conflicting_whitelists() -> None:
     """白名单重叠 ⇒ **必须分到不同批**，否则两个子代理会改同一片文件。"""
-    from bg_coordinator.readiness import plan_fanout
+    from bg_coordinator.readiness import Quota, plan_fanout
 
     tasks = {
         "T-D-1": _task("T-D-1", ["shared/**"]),
         "T-D-2": _task("T-D-2", ["shared/**"]),
         "T-D-3": _task("T-D-3", ["other/**"]),
     }
-    plan = plan_fanout(tasks, "D")
+    plan = plan_fanout(tasks, "D", quota=Quota(enabled=True, per_line={"D": 3}))
     assert plan.total == 3
     assert plan.width == 2, "两条共享文件的活不能同批"
     batch_ids = [[t.id for t in b] for b in plan.batches]
@@ -384,8 +386,12 @@ def test_fanout_budget_accounts_for_in_flight() -> None:
     assert plan.width == 1
 
 
-def test_fanout_without_quota_is_unbounded_but_still_disjoint() -> None:
-    """预算未启用 ⇒ 不限宽度，**但仍按白名单分批**（冲突这条永远不能省）。"""
+def test_fanout_without_budget_dispatches_nothing() -> None:
+    """**未批预算 ⇒ 派不了活**（默认即闸）。
+
+    这条钉的是口径本身：旧默认是 `enabled=False`（只观测），于是"能开几个"只剩散文——
+    实测没批任何预算 `claim-dev` 照样通过。现在没批就是 0，**缺口暴露给批预算的人**。
+    """
     from bg_coordinator.readiness import plan_fanout
 
     tasks = {
@@ -395,21 +401,20 @@ def test_fanout_without_quota_is_unbounded_but_still_disjoint() -> None:
         "T-D-4": _task("T-D-4", ["z/**"]),
     }
     plan = plan_fanout(tasks, "D")
-    assert plan.budget is None
-    assert plan.width == 3, "除冲突那条外都能同批"
-    assert not plan.deferred
+    assert plan.total == 0, "未批预算不得排出可派条目"
+    assert plan.width == 0
 
 
 def test_fanout_only_covers_ready_tasks() -> None:
     """未定稿或被占的条目不进并行计划——**能并行不等于可以开工**。"""
-    from bg_coordinator.readiness import plan_fanout
+    from bg_coordinator.readiness import Quota, plan_fanout
 
     tasks = {
         "T-D-1": _task("T-D-1", ["a/**"]),
         "T-D-2": _task("T-D-2", ["b/**"], status=TaskState.REGISTERED),
         "T-D-3": _task("T-D-3", ["c/**"], owner="TL-9"),
     }
-    plan = plan_fanout(tasks, "D")
+    plan = plan_fanout(tasks, "D", quota=Quota(enabled=True, per_line={"D": 3}))
     assert [t.id for b in plan.batches for t in b] == ["T-D-1"]
 
 

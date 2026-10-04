@@ -70,7 +70,15 @@ check "define"         coord define --id "$TID" --role pm:pm-D:D \
                          --acceptance 'test:uv run pytest -q' \
                          --acceptance 'negative:未注入仍 200 ⇒ 必红'
 check "ready"          coord ready --role-name tech-lead
+# **默认即闸**：没批预算 ⇒ 派不了活（这条把文档那句变成可执行判据）
+check_fail "未批预算 ⇒ 派不了活" coord claim-dev --id "$TID" --role tech-lead:TL-D:D
+check "批预算（D 线 ≤2）" coord quota --line D --budget 2
 check "claim-dev"      coord claim-dev --id "$TID" --role tech-lead:TL-D:D
+# **子代理授权**：开子代理前先领凭证（按条目一张，可数、有界、会过期）
+check "dispatch 领授权"   coord dispatch --role tech-lead:TL-D:D --task "$TID"
+check "grants 可查"       bash -c "'$PY' -m bg_coordinator.cli --root '$ROOT' --json grants | grep -q '$TID'"
+check_fail "同条目再领 ⇒ 拒" coord dispatch --role tech-lead:TL-D:D --task "$TID"
+check_fail "dev 越权领 ⇒ 拒" coord dispatch --role dev:d1:D --task "$TID"
 check "start"          coord start --id "$TID" --role tech-lead:TL-D:D
 check "deliver"        coord deliver --id "$TID" --role tech-lead:TL-D:D \
                          --commit abc1234 --gate-cmd 'uv run pytest -q' --gate-exit 0 \

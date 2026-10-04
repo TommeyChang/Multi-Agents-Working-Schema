@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from conftest import budgeted  # noqa: E402
+
 from bg_coordinator.engine import Params, State, apply
 from bg_coordinator.errors import Code
 from bg_coordinator.merge import (
@@ -61,7 +63,7 @@ def _delivered(
     if changed is None:
         probe = wl[0].rstrip("/").replace("/**", "") if wl else "data_access"
         changed = [f"{probe}/probe.py"]
-    s = prior if prior is not None else State()
+    s = prior if prior is not None else budgeted(State())
     steps: list[tuple[str, Actor, Params | None]] = [
         (
             "register",
@@ -276,7 +278,7 @@ def test_queue_status_is_observable(tmp_path: Path) -> None:
 
 
 def test_dispatch_on_empty_queue_is_rejected() -> None:
-    r = dispatch_next(State())
+    r = dispatch_next(budgeted(State()))
     assert not r.ok
     assert r.rejection is not None and r.rejection.code == Code.E_BAD_STATE
 

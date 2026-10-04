@@ -30,14 +30,23 @@ class Quota:
     - `total_in_flight`：**总量上限**（可选）。线间放开不等于整机资源放开——
       触库并发、CPU、内存都是共享的，这层闸兜的是它们；
 
-    `enabled=False` 时只观测不放行。
+    **默认即闸**（`enabled=True`）：没批预算的线**派不了活**。
+
+    这不是"严格一点"，而是让文档那句「未批预算的线派不了活」**变成真的**：
+    以前默认 `False`（只观测），于是唯一的闸默认是关的，能不能派全凭散文——
+    实测"没批任何预算，`claim-dev` 照样通过"。要放开（观测态）必须**显式**
+    在 `quota.json` 里写 `enabled: false`：决策缺口暴露，不靠默认值静默填上。
     """
 
-    enabled: bool = False
+    enabled: bool = True
     #: 逐线预算。**缺省即未批**——不是"用默认值"。
     per_line: dict[str, int] = field(default_factory=dict)
     #: 全部线加起来的在办上限；None 表示不设总量闸。
     total_in_flight: int | None = None
+    #: **同一派单方同时在手的子代理授权数**（凭证，不是条目数）。
+    #: 这条以前只写在 `rules/SUBAGENT.md` 的散文里（"累计 ≤10"）——
+    #: 散文拦不住任何东西，现在它是协调器里的计数。
+    subagent_max_per_dispatcher: int = 10
     bg_db_max: int = 20
     bg_db_disk_mb: int = 4096
     test_slot: int = 4

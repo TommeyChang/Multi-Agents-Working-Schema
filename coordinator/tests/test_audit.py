@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from conftest import budgeted  # noqa: E402
+
 from bg_coordinator.audit import audit, audit_summary, trace, why
 from bg_coordinator.engine import Params, State, apply
 from bg_coordinator.errors import Code
@@ -40,7 +42,7 @@ def _full(tmp_path: Path, tid: str = "T-D-1") -> State:
     ev = tmp_path / f"{tid}.log"
     ev.write_text("2182 passed", encoding="utf-8")
     s = apply(
-        State(),
+        budgeted(State()),
         "register",
         tid,
         _po(),
@@ -86,7 +88,7 @@ def test_trace_shows_full_chain(tmp_path: Path) -> None:
     s = _full(tmp_path)
 
     chain: list = []
-    cur = State()
+    cur = budgeted(State())
     for verb, actor, params in (
         ("register", _po(), Params(title="t", line=Line.D, kind=Kind.R, priority=Priority.P1)),
         ("claim-analyze", _pm(), None),
@@ -105,7 +107,7 @@ def test_trace_shows_full_chain(tmp_path: Path) -> None:
 
 def test_trace_includes_deliver_details(tmp_path: Path) -> None:
     """交付细节（commit／门禁／证据路径）必须在链上可见——这是"证据可核"的入口。"""
-    cur = State()
+    cur = budgeted(State())
     events = []
     ev = tmp_path / "g.log"
     ev.write_text("ok", encoding="utf-8")
@@ -157,7 +159,7 @@ def test_why_maps_file_back_to_task(tmp_path: Path) -> None:
 
 
 def test_why_on_unknown_path_says_so() -> None:
-    text = why(State(), "no/such/file.py").render()
+    text = why(budgeted(State()), "no/such/file.py").render()
     assert "无关联条目" in text
 
 
@@ -167,8 +169,20 @@ def test_why_on_unknown_path_says_so() -> None:
 
 
 def test_healthy_state_has_no_anomalies(tmp_path: Path) -> None:
-    """**通过项必须静默**——这正是不把文档丢过来的关键。"""
+    """**通过项必须静默**——这正是不把文档丢过来的关键。
+
+    注意"健康"的口径含**在办必须有在手授权**：在办意味着有人在做，
+    而做的人要么是独立会话、要么是**领了凭证的子代理**（子代理不得自开）。
+    """
     s = _full(tmp_path)
+    import time
+
+    from bg_coordinator.engine import grant_dispatch
+
+    tid = next(iter(s.tasks))
+    granted = grant_dispatch(s, holder="TL-D", task_id=tid, line="D", clock=time.time())
+    assert granted.ok, granted.rejection
+    s = granted.state
     assert audit(s) == []
     summary = audit_summary(s)
     assert summary["anomaly_count"] == 0
@@ -176,7 +190,7 @@ def test_healthy_state_has_no_anomalies(tmp_path: Path) -> None:
 
 
 def test_accepted_without_evidence_is_an_anomaly() -> None:
-    s = State()
+    s = budgeted(State())
     r = apply(
         s, "register", "T-D-1", _po(), params=Params(title="t", line=Line.D, kind=Kind.T)
     )
@@ -206,7 +220,7 @@ def test_in_flight_without_priority_is_an_anomaly(tmp_path: Path) -> None:
 
 
 def test_dangling_dependency_is_an_anomaly() -> None:
-    s = State()
+    s = budgeted(State())
     s = apply(
         s, "register", "T-D-1", _po(), params=Params(title="t", line=Line.D, kind=Kind.R)
     ).state
@@ -218,7 +232,7 @@ def test_dead_lease_is_an_anomaly() -> None:
     """资源枯竭**事前可见**——这是报告第五节的价值。"""
     from bg_coordinator.engine import acquire_lease
 
-    s = State()
+    s = budgeted(State())
     r = acquire_lease(s, klass="bg_db", holder="w", db_name="bg_x", pid=999999999, ttl=100.0, clock=1.0)
     assert r.ok
     anomalies = audit(r.state, clock=1.0)
@@ -327,7 +341,7 @@ def test_duplicate_number_is_an_anomaly() -> None:
     """
     from bg_coordinator.engine import reserve_number
 
-    s = State()
+    s = budgeted(State())
     reserve_number(s, "T-D", holder="TL-D", ts="2026-10-04T00:00:00+08:00")
     # 正常路径（alloc_number 单调推进）到不了这里；能到这里的只有 override／事件重放／人工改状态
     s.allocations.append(dict(s.allocations[0]))
@@ -343,7 +357,7 @@ def test_legal_number_ledger_has_no_duplicate_anomaly() -> None:
     """负例锚点：合法演进（占号／落物／让号）**不得**报同号双占——否则判据是噪声。"""
     from bg_coordinator.engine import materialize_number, release_number, reserve_number
 
-    s = State()
+    s = budgeted(State())
     reserve_number(s, "T-D", holder="TL-D", ts="t")
     reserve_number(s, "T-D", holder="TL-D", ts="t")
     reserve_number(s, "T-D", holder="TL-D", ts="t")
@@ -367,7 +381,7 @@ def test_number_ledger_partitions_the_range() -> None:
         reserve_number,
     )
 
-    s = State()
+    s = budgeted(State())
     for _ in range(5):
         reserve_number(s, "T-D", holder="TL-D", ts="t")
     assert materialize_number(s, "T-D", 1, obj_id="T-D-1")[0]
@@ -394,3 +408,10 @@ def test_number_ledger_partitions_the_range() -> None:
     inv = number_inventory(s)["T-D"]
     assert (inv["materialized"], inv["pending"], inv["released"]) == (2, 2, 1)
     assert inv["unaccounted"] == 0
+
+
+def test_in_flight_without_grant_is_an_anomaly(tmp_path: Path) -> None:
+    """**在办但无凭证 ⇒ 异常**——"开了几个子代理"不能只靠自报。"""
+    s = _full(tmp_path)
+    codes = [a.code for a in audit(s)]
+    assert Code.E_UNAUTHORIZED_DISPATCH in codes
