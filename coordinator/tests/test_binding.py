@@ -196,3 +196,53 @@ def test_rules_point_at_binding_for_per_project_lists() -> None:
     for name in ("SUBAGENT.md", "WORKSPACE.md"):
         text = (MAWS / "rules" / name).read_text(encoding="utf-8")
         assert "工程绑定" in text, f"{name} 应按绑定引用共享面清单"
+
+
+# ---------------------------------------------------------------------------
+# 并存副本：**不许有第二真相源**
+# ---------------------------------------------------------------------------
+
+
+def test_shadowed_copy_is_reported_even_when_identical(tmp_path: Path) -> None:
+    """两处并存 ⇒ 报出来（哪怕此刻一致）——被忽略的那份**不会停止变化**。"""
+    repo = tmp_path / "demo"
+    (repo / ".maws").mkdir(parents=True)
+    _write(repo / ".maws", dict(_GOOD, project="demo"))
+    # 体系侧同名副本（用 monkeypatch 把体系根指到 tmp）
+    side = tmp_path / "sys" / "bindings"
+    side.mkdir(parents=True)
+    _write(side, dict(_GOOD, project="demo"))
+    (side / "project.md").rename(side / "demo.md")
+    import bg_coordinator.binding as b
+
+    orig = b.bindings_dir
+    b.bindings_dir = lambda: side
+    try:
+        info = b.describe(repo, BINDING_FIELDS)
+    finally:
+        b.bindings_dir = orig
+    assert info["source"] == b.SRC_TRUNK
+    assert len(info["shadowed"]) == 1
+    assert info["shadowed"][0]["diverged"] is False
+    assert any("冗余副本" in g for g in info["gaps"])
+
+
+def test_diverged_shadow_is_a_gap(tmp_path: Path) -> None:
+    """两份**内容不一致** ⇒ 缺口（退出码 1）——这是静默漂移的入口。"""
+    repo = tmp_path / "demo"
+    (repo / ".maws").mkdir(parents=True)
+    _write(repo / ".maws", dict(_GOOD, project="demo"))
+    side = tmp_path / "sys" / "bindings"
+    side.mkdir(parents=True)
+    _write(side, dict(_GOOD, project="demo", scratch_namespace="old_"))
+    (side / "project.md").rename(side / "demo.md")
+    import bg_coordinator.binding as b
+
+    orig = b.bindings_dir
+    b.bindings_dir = lambda: side
+    try:
+        info = b.describe(repo, BINDING_FIELDS)
+    finally:
+        b.bindings_dir = orig
+    assert info["shadowed"][0]["diverged"] is True
+    assert any("不一致" in g for g in info["gaps"])

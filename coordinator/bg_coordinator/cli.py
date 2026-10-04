@@ -450,6 +450,9 @@ def cmd_bind(args: argparse.Namespace) -> int:
             print(f"  GAP     {gap}")
         for code, workface in sorted(info["lines"].items()):
             print(f"  线 {code:<5} {'、'.join(workface or []) or '—'}")
+        for shadow in info.get("shadowed", []):
+            tag = "与已采用的**不一致**" if shadow["diverged"] else "与已采用的一致（冗余）"
+            print(f"  另有    {shadow['source']}副本：{shadow['path']}——{tag}")
         if info["status"] != "完整":
             print()
             print("  补齐后体系侧一个字都不用动——**落点归工程**。")

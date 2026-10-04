@@ -127,8 +127,36 @@ def line_of(data: dict | None, code: str) -> dict | None:
     return entry if isinstance(entry, dict) else None
 
 
+def shadows(repo: Path | None, taken: Path | None, adopted: dict | None) -> list[dict]:
+    """找出**未被采用**的候选副本——两处并存是「第二真相源」的入口。
+
+    返回每一项带 `diverged`：
+    - 与已采用的那份**机读块不一致** ⇒ `diverged=True`（**静默漂移**，必须报缺口）；
+    - 一致 ⇒ 只是冗余副本（报出来，但不阻断）。
+
+    为什么不能只是"按优先级取一份就完事"：被忽略的那份**不会停止变化**。
+    它今天一致，下个月就不一致，而没有任何机制会提醒任何人。
+    """
+    out: list[dict] = []
+    if repo is None:
+        return out
+    for source, path in candidates(repo):
+        if path == taken or not path.is_file():
+            continue
+        other, err = load(path)
+        out.append(
+            {
+                "source": source,
+                "path": str(path),
+                "error": err,
+                "diverged": bool(err) or (other != adopted),
+            }
+        )
+    return out
+
+
 def describe(repo: Path | None, fields: tuple[tuple[str, str, str], ...]) -> dict:
-    """给 `coord bind` 用的完整状态：来源／路径／缺口／各线工作面。"""
+    """给 `coord bind` 用的完整状态：来源／路径／缺口／各线工作面／**并存副本**。"""
     source, path = locate(repo)
     out: dict = {
         "project": repo.name if repo else "",
@@ -137,6 +165,7 @@ def describe(repo: Path | None, fields: tuple[tuple[str, str, str], ...]) -> dic
         "gaps": [],
         "status": "未登记",
         "lines": {},
+        "shadowed": [],
     }
     if path is None:
         out["gaps"] = [f"未登记绑定：主干侧 {TRUNK_REL} 不存在，体系侧 {BINDINGS_DIRNAME}/ 也没有"]
@@ -146,6 +175,18 @@ def describe(repo: Path | None, fields: tuple[tuple[str, str, str], ...]) -> dic
         out["gaps"] = [err]
         return out
     out["gaps"] = validate(data, fields)
+    out["shadowed"] = shadows(repo, path, data)
+    for shadow in out["shadowed"]:
+        if shadow["diverged"]:
+            out["gaps"].append(
+                f"另有{shadow['source']}副本且与已采用的不一致（{shadow['path']}）——"
+                "两处并存必然静默漂移：**只留一处**，别让被忽略的那份继续变"
+            )
+        else:
+            out["gaps"].append(
+                f"另有{shadow['source']}冗余副本（{shadow['path']}）——内容暂时一致，"
+                "但它会漂移：搬完就删旧，别留副本"
+            )
     out["status"] = "完整" if not out["gaps"] else "有缺口"
     lines = data.get("lines")
     if isinstance(lines, dict):
