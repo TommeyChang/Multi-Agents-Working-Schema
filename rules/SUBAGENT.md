@@ -35,8 +35,7 @@
 **硬上限**：同一派单方**累计派出的子代理授权 ≤ 10**（`quota.subagent_max_per_dispatcher`）。
 **是累计，不是「在手」**（2026-10-04 用户口径：「一个对话开启的子代理总数不得超过 10 个」）：
 销账**不重置**——否则「开一个、销一个、再开」可以无限循环，那不是闸。
-判据在协调器里：`state.dispatch_tally`（进事件面，重放可还原）；
-`coord grants` 同时给**在手**与**累计**两个数（在手只作观察，闸看累计）。
+判据：`state.dispatch_tally`（进事件面，重放可还原）；`coord grants` 两个数都列，闸看累计。
 
 - **这是协调器里的计数，不是自报**：`coord grants` 是唯一答案；超上限时 `coord dispatch` 直接拒
   （`E_UNAUTHORIZED_DISPATCH`）；
