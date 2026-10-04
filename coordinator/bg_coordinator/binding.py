@@ -53,6 +53,17 @@ MIGRATION_SUBFIELDS: tuple[tuple[str, str], ...] = (
     ("base", "基线：新增件接在谁后面／哪些件算已落库"),
 )
 
+#: `gate.complexity` 里**闸真正读**的子字段——声明了复杂度闸就都得在。
+#: 档位（`floor`／`warn_at`）可省（有体系兜底），但**路径与基线不能省**：
+#: 省了就只能靠猜，而"猜"正是这套体系不许发生的事。
+COMPLEXITY_SUBFIELDS: tuple[tuple[str, str], ...] = (
+    ("base", "基线：算分叉点用（判「本分支新欠的债」）"),
+    ("paths", "要判的路径（数组，非空）"),
+)
+
+#: `gate.complexity` 的档位取值域（radon 的 A~F）
+COMPLEXITY_RANKS = "ABCDEF"
+
 
 def maws_root() -> Path:
     """体系根（`bg_coordinator/binding.py` 往上三层）。"""
@@ -129,6 +140,18 @@ def validate(data: dict, fields: tuple[tuple[str, str, str], ...]) -> list[str]:
         for sub, desc in MIGRATION_SUBFIELDS:
             if not (isinstance(mig.get(sub), str) and mig[sub].strip()):
                 gaps.append(f"`migrations.{sub}` 须为非空字符串（{desc}）")
+    gate = data.get("gate")
+    cx = gate.get("complexity") if isinstance(gate, dict) else None
+    if isinstance(cx, dict) and cx:
+        base = cx.get("base")
+        if not (isinstance(base, str) and base.strip()):
+            gaps.append(f"`gate.complexity.base` 须为非空字符串（{COMPLEXITY_SUBFIELDS[0][1]}）")
+        if not cx.get("paths"):
+            gaps.append(f"`gate.complexity.paths` 须为非空数组（{COMPLEXITY_SUBFIELDS[1][1]}）")
+        for key in ("floor", "warn_at"):
+            rank = cx.get(key)
+            if rank is not None and str(rank).upper() not in COMPLEXITY_RANKS:
+                gaps.append(f"`gate.complexity.{key}` 只能是 {list(COMPLEXITY_RANKS)} 之一")
     return gaps
 
 

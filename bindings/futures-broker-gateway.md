@@ -42,6 +42,21 @@
 - **共享面**（改这些要跑全部域）：`main.py`、`settings.py`、`logging_config.py`、`pyproject.toml`、
   `alembic_metadata.py`；
 - **静态腿**（不触库的秒级闸，清单是工程数据）：见机读块；
+- **复杂度闸（本工程必须用 radon）**：口径 = **相对基线不退化**（ratchet），
+  工具 `radon`（**已写进本仓 dev 依赖**：`pyproject.toml` 的 `[dependency-groups] dev`
+  ＋ `uv.lock`），判据在 `coordinator/tools/complexity.py`。
+  - **判什么**：本分支相对**分叉点**（`merge-base(origin/main, HEAD)`）新增或变差的块。
+    新增/变差到 **C 级及以上 ⇒ BLOCK**；**B 级 ⇒ WARN**；变小或消失不判。
+  - **为什么不是绝对阈值**：实测本仓存量（316 文件／3802 块）
+    **A 3280／B 362／C 134／D 22／E 3／F 1**——"不许有 C"会把 ~160 个存量块当场染红，
+    闸立刻变噪声被绕过（**假红比没闸更坏**）。存量债走重构条目，不靠闸宣布。
+  - **判哪些路径**：`auth`、`broker_gateway`、`data_access`、`dfs`、`main`、`notification`、
+    `scripts`、`settings.py`、`main.py`（见机读块）。**不含 `tests/`**——测试的复杂度口径另说。
+  - **在哪儿跑**：**分支侧**（dev／TL 在自己的 worktree 里跑 `tools/gate.py`，证据入档）。
+    ⚠ **别在共享主检出里跑**：那里未提交面是**所有人**的在途改动，ratchet 会把别人的账
+    算到你头上（实测首跑就逮到另一会话在途的新增 C 级函数）。
+  - **缺 radon 即红**：声明了就得跑，radon 不在目标仓解释器里 ⇒ 腿退出 2 ⇒ 门禁红
+    （`--no-complexity` 是显式逃生口，证据里会少一条腿，评审看得见）。
 - **现状量级**（"域粒度为什么太粗"的依据，实测）：全仓 ≈4939 用例；
   `broker_gateway` 一个域 ≈2774 例（**56%**）、`data_access` 785、`infra` 744、`auth` 476。
   收窄测试范围（按影响面）的理由就来自这个量级。
@@ -157,7 +172,15 @@
       "tests/infra/test_git_hooks.py"
     ],
     "release": "全量 pytest（ruff ＋ 按目录分组，每目录独立进程）",
-    "db_discipline": "真库档不得与其它会话并发（工程 docs/TESTING.md §3）"
+    "db_discipline": "真库档不得与其它会话并发（工程 docs/TESTING.md §3）",
+    "complexity": {
+      "tool": "radon",
+      "base": "origin/main",
+      "paths": ["auth", "broker_gateway", "data_access", "dfs", "main", "notification", "scripts", "settings.py", "main.py"],
+      "floor": "C",
+      "warn_at": "B",
+      "baseline_measured": "A 3280 / B 362 / C 134 / D 22 / E 3 / F 1（3802 块，2026-10-04 实测）"
+    }
   },
   "migrations": {
     "dir": "alembic/versions",

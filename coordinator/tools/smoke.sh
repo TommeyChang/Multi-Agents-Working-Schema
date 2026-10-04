@@ -206,6 +206,36 @@ git -C "$REPO" checkout -q smoke-behind
 check "migration_gate **落后分支不误报**（落后 ≠ 改写）" \
   "$PY" "$PKG_ROOT/tools/migration_gate.py" --target "$REPO" --base "$SMOKE_MAIN_BRANCH"
 
+# 复杂度闸（ratchet）：radon 出数、判据在本体系。用**桩**证明有齿，用"缺 radon"证明不放行
+mkdir -p "$REPO/app"
+printf 'def f():\n    return 1\n' > "$REPO/app/core.py"
+git -C "$REPO" add -A >/dev/null 2>&1
+git -C "$REPO" commit -qm smoke-cx-base >/dev/null 2>&1
+git -C "$REPO" tag smoke-cx-base
+cat > "$SANDBOX/fake_radon.py" <<'PY'
+import json, os, sys
+key = "FAKE_RADON_BASELINE" if "maws-cx-" in os.getcwd() else "FAKE_RADON_CURRENT"
+data = json.loads(os.environ.get(key, "{}"))
+paths = sys.argv[3:]
+print(json.dumps({p: v for p, v in data.items()
+                  if any(p == q or p.startswith(q.rstrip("/") + "/") for q in paths)}))
+PY
+check_fail "complexity **新增 C 级块** ⇒ BLOCK" env \
+  'FAKE_RADON_CURRENT={"app/core.py":[{"type":"function","rank":"C","complexity":12,"name":"big","lineno":3}]}' \
+  'FAKE_RADON_BASELINE={"app/core.py":[]}' \
+  "$PY" "$PKG_ROOT/tools/complexity.py" --target "$REPO" --base smoke-cx-base --paths app \
+  --radon "$PY $SANDBOX/fake_radon.py"
+check "complexity **落后不误报**（基线更复杂）" env \
+  'FAKE_RADON_CURRENT={"app/core.py":[{"type":"function","rank":"A","complexity":2,"name":"f","lineno":1}]}' \
+  'FAKE_RADON_BASELINE={"app/core.py":[{"type":"function","rank":"C","complexity":15,"name":"f","lineno":1}]}' \
+  "$PY" "$PKG_ROOT/tools/complexity.py" --target "$REPO" --base smoke-cx-base --paths app \
+  --radon "$PY $SANDBOX/fake_radon.py"
+check_fail "complexity 缺 radon ⇒ 退出 2（**缺它即红**）" \
+  "$PY" "$PKG_ROOT/tools/complexity.py" --target "$REPO" --base smoke-cx-base --paths app \
+  --radon no-such-radon-command
+check_fail "complexity **落点不明** ⇒ 拒绝猜" \
+  "$PY" "$PKG_ROOT/tools/complexity.py" --target "$REPO" --base smoke-cx-base
+
 # 串行族放号闸：迁移件同时只允许一个在飞占号（号顺序＝链位顺序）
 check "reserve alembic 首个" bash -c "'$PY' -m bg_coordinator.cli --root '$ROOT' reserve --family alembic --holder dba-a --task T-D-1 >/dev/null 2>&1"
 check_fail "reserve alembic 第二个 ⇒ E_NUMBER_INFLIGHT" "$PY" -m bg_coordinator.cli --root "$ROOT" reserve --family alembic --holder dba-b --task T-D-2

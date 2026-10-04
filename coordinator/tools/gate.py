@@ -7,10 +7,13 @@
 
 | 范围 | 内容 | 什么时候用 |
 |---|---|---|
-| `static` | ruff（＋调用方给的静态腿） | 每次提交前 |
+| `static` | ruff ＋ 复杂度闸（绑定声明过）＋ 调用方给的静态腿 | 每次提交前 |
 | `affected` | static ＋ **按影响面**的 pytest（快跑通道 `-m "not db"`） | 交付前自测（默认） |
 | `domain` | static ＋ 指定域全跑（快跑通道） | 跨文件、跨子目录的改动 |
-| `full` | ruff ＋ 目标仓**全量** pytest | **发布前**（这条不因任何收窄工具改变） |
+| `full` | ruff ＋ 复杂度闸 ＋ 目标仓**全量** pytest | **发布前**（这条不因任何收窄工具改变） |
+
+**声明过的腿缺工具就跑红**：复杂度闸要 radon，radon 不在目标仓解释器里 ⇒ 这条腿退出 2
+⇒ 门禁红（`--no-complexity` 是显式逃生口，证据里会少一条腿，评审判据看得见）。
 
 **范围由本体系自己算**（`impact_scope.py`：直连 → 同名 → 退回整域），不借外部脚本。
 目标仓只提供**负载**：它的 ruff、它的 pytest、它的测试文件——本体系不重写它们，
@@ -51,6 +54,8 @@ _COORDINATOR_ROOT = Path(__file__).resolve().parents[1]
 if str(_COORDINATOR_ROOT) not in sys.path:
     sys.path.insert(0, str(_COORDINATOR_ROOT))
 
+from bg_coordinator.binding import load as load_binding  # noqa: E402
+from bg_coordinator.binding import locate as locate_binding  # noqa: E402
 from bg_coordinator.target import target_repo  # noqa: E402
 
 #: 快跑通道的手册标记：真库档按目标仓自己的纪律**不得并发**，故不进门禁的日常范围
@@ -59,6 +64,27 @@ FAST_MARKER = "not db"
 DEFAULT_LOG_DIR_NAME = ".evidence"
 
 _PYTEST_TALLY = re.compile(r"(\d+) (passed|failed|error|errors|skipped)")
+
+#: 本体系自己的工具目录（复杂度闸按脚本跑到**目标仓的解释器**里：判据在本体系、
+#: 工具链在目标仓——与 ruff／pytest 同一条分工）
+TOOLS = Path(__file__).resolve().parent
+
+
+def complexity_declared(target: Path) -> bool:
+    """目标仓的工程绑定有没有声明复杂度闸（工程落点归工程）。
+
+    **声明了才加腿**：没声明的工程不该被塞一条它没认过的闸；
+    声明了而 radon 不在 ⇒ 腿红（fail closed）——"必须使用"就落在这里。
+    """
+    _src, path = locate_binding(target)
+    if path is None:
+        return False
+    data, _err = load_binding(path)
+    if not data:
+        return False
+    gate = data.get("gate") if isinstance(data.get("gate"), dict) else {}
+    conf = gate.get("complexity")
+    return bool(isinstance(conf, dict) and conf)
 
 
 @dataclass
@@ -202,11 +228,23 @@ def build_plan(
     legs: list[tuple[str, list[str]]] = []
     if not args.no_ruff:
         legs.append(("ruff", [python, "-m", "ruff", "check", "."]))
+    if not args.no_complexity and complexity_declared(target):
+        # 声明过的复杂度闸 ⇒ 每条范围都跑（静态、快、判据在 tools/complexity.py）。
+        # 缺 radon ⇒ 退出码 2 ⇒ 这条腿红：**缺它不放行**，不是静默跳过。
+        legs.append(
+            (
+                "复杂度闸（radon ratchet）",
+                [python, str(TOOLS / "complexity.py"), "--target", str(target), "--json"],
+            )
+        )
+
+    # 说明里点名"这一跑到底跑了哪些腿"——证据的摘要行要能自证覆盖面
+    cx = "＋复杂度闸（ratchet）" if any("complexity.py" in " ".join(c) for _, c in legs) else ""
 
     marker = [] if args.scope == "full" else ["-m", FAST_MARKER]
     if args.scope == "full":
         legs.append(("全量 pytest（tests/）", [python, "-m", "pytest", "-q", *marker, "tests/"]))
-        return legs, "发布前口径：ruff ＋ 目标仓全量"
+        return legs, f"发布前口径：ruff{cx} ＋ 目标仓全量"
 
     if args.scope == "domain":
         for dom in args.domain:
@@ -214,12 +252,12 @@ def build_plan(
             if not d.is_dir():
                 raise SystemExit(f"域不存在：{d}")
             legs.append((f"域 tests/{dom}", [python, "-m", "pytest", "-q", *marker, f"tests/{dom}"]))
-        return legs, f"指定域：{', '.join(args.domain)}"
+        return legs, f"指定域：{', '.join(args.domain)}{cx}"
 
     if args.scope == "static":
         for extra in args.static_tests:
             legs.append((f"静态腿 {extra}", [python, "-m", "pytest", "-q", *marker, extra]))
-        return legs, "静态口径：ruff（＋调用方给的静态腿）"
+        return legs, f"静态口径：ruff{cx}（＋调用方给的静态腿）"
 
     # affected：范围由本体系算
     changed = list(args.changed)
@@ -235,11 +273,11 @@ def build_plan(
     files, why, all_domains = impact_tests(target, changed, python)
     if all_domains:
         legs.append(("全域 pytest（共享面）", [python, "-m", "pytest", "-q", *marker, "tests/"]))
-        return legs, f"{note}；{why}"
+        return legs, f"{note}；{why}{cx}"
     if not files:
-        return legs, f"{note}；{why}（无可跑测试 ⇒ 只跑静态腿）"
+        return legs, f"{note}；{why}{cx}（无可跑测试 ⇒ 只跑静态腿）"
     legs.append(("受影响面 pytest", [python, "-m", "pytest", "-q", *marker, *files]))
-    return legs, f"{note}；{why}"
+    return legs, f"{note}；{why}{cx}"
 
 
 def _write_log(run: GateRun, log_dir: Path) -> Path:
@@ -267,6 +305,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--domain", nargs="*", default=[], help="域（domain 口径）")
     ap.add_argument("--static-tests", nargs="*", default=[], help="静态腿（static 口径）")
     ap.add_argument("--no-ruff", action="store_true", help="不跑 ruff")
+    ap.add_argument(
+        "--no-complexity",
+        action="store_true",
+        help="不跑复杂度闸（**绑定声明过它就该跑**；这条是显式逃生口，证据里会少一条腿）",
+    )
     ap.add_argument("--log-dir", default=None, help="原始输出落盘目录（默认 <本体系>/.evidence）")
     ap.add_argument("--timeout", type=float, default=1800.0, help="单腿超时秒")
     ap.add_argument("--json", action="store_true")

@@ -51,9 +51,53 @@ def _args(**kw):
         "domain": [],
         "static_tests": [],
         "no_ruff": False,
+        "no_complexity": False,
     }
     base.update(kw)
     return type("A", (), base)()
+
+
+def _declare_complexity(tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, on: bool) -> None:
+    """给目标仓挂一份（声明／不声明复杂度闸的）体系侧绑定。"""
+    import bg_coordinator.binding as b
+
+    side = tmp_path / "bindings"
+    side.mkdir(exist_ok=True)
+    gate_conf: dict = {"entry": "tools/gate.py"}
+    if on:
+        gate_conf["complexity"] = {
+            "tool": "radon",
+            "base": "origin/main",
+            "paths": ["auth"],
+            "floor": "C",
+        }
+    payload = {"project": repo.name, "version": 1, "gate": gate_conf}
+    (side / f"{repo.name}.md").write_text(
+        "# 绑定\n\n```json\n" + json.dumps(payload) + "\n```\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(b, "bindings_dir", lambda: side)
+
+
+def test_complexity_leg_added_only_when_declared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """**声明了才加腿**（工程落点归工程）：没认过的闸不该被塞进去。"""
+    repo = _fake_target(tmp_path)
+    _declare_complexity(tmp_path, repo, monkeypatch, on=False)
+    legs, _ = gate.build_plan(_args(scope="static"), repo, sys.executable)
+    assert not any("complexity.py" in " ".join(c) for _, c in legs)
+
+    _declare_complexity(tmp_path, repo, monkeypatch, on=True)
+    legs, _ = gate.build_plan(_args(scope="static"), repo, sys.executable)
+    cmds = [" ".join(c) for _, c in legs]
+    assert any("complexity.py" in c for c in cmds), cmds
+    assert any("--target" in c for c in cmds)
+
+
+def test_complexity_leg_has_explicit_escape_hatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """逃生口是**显式**的：`--no-complexity` 一给，证据里就少一条腿（评审看得见）。"""
+    repo = _fake_target(tmp_path)
+    _declare_complexity(tmp_path, repo, monkeypatch, on=True)
+    legs, _ = gate.build_plan(_args(scope="static", no_complexity=True), repo, sys.executable)
+    assert not any("complexity.py" in " ".join(c) for _, c in legs)
 
 
 def test_pick_python_prefers_target_venv_then_self(tmp_path: Path) -> None:
