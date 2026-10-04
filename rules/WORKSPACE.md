@@ -9,10 +9,10 @@
 
 ```
 futures-broker-gateway-workspace/          # 工作区根（不入库）
-├── futures-broker-gateway/                # 主检出 —— 永远停在主干
-│   ├── todo/                              # 视图（渲染产物，只读语义）
-│   └── reports/                           # 人读报告（渲染产物）
-├── Multi-Agents-Working-Schema/    # **MAWS：一个体系一个一级目录**（仓库之外）
+├── futures-broker-gateway/                # 【产品仓】主检出 —— 永远停在主干
+│   ├── todo/                              #   视图（协调器渲染产物，只读语义）
+│   └── reports/                           #   人读报告（渲染产物）
+├── Multi-Agents-Working-Schema/           # 【体系仓】MAWS 自己：独立 git 仓 ＋ 自己的 origin
 │   ├── README.md                          #   仓首页
 │   ├── AGENT.md                           #   入口：读什么、谁是谁、开局三步
 │   ├── rules/                             #   跨角色规则
@@ -21,18 +21,31 @@ futures-broker-gateway-workspace/          # 工作区根（不入库）
 │   │   ├── SUBAGENT.md                    #     子代理：派单、职能、扇出、额度
 │   │   └── RISKS.md                       #     本体系自身的风险
 │   ├── agents/                            #   角色：一角色一文件，统一骨架
-│   │   └── commander ／ po ／ pm ／ tech-lead ／ dev ／ ops ／ dba
-│   ├── ref/                               #   只读参考件：取样原件（出处 ＋ 哈希可回溯）
+│   ├── ref/                               #   只读取样（**不入库**）
+│   ├── .state/ · .evidence/               #   运行时：状态根／门禁证据（**不入库**）
 │   └── coordinator/                       #   协调器：实现 ＋ 测试 ＋ 工具
-│       ├── DESIGN.md                      #     设计
-│       └── bg_coordinator/ · tests/ · tools/   # tools 含门禁、迁移闸、标定、影响面、监视器、冒烟
+│       └── DESIGN.md · bg_coordinator/ · tests/ · tools/
 └── worktrees/                             # 各代理的独立工作区（不入库）
-    ├── dev-T123-auth-retry/               # git worktree，分支 dev/T123-auth-retry
-    └── ops-migrate-20250930/
+    ├── dev-T123-auth-retry/               #   产品仓的 worktree（**登记在产品仓里**）
+    └── maws-dev-rename/                   #   体系仓的 worktree（**登记在体系仓里**）
 ```
 
+**两个仓，两套主检出——本文件对两个仓都成立**：
+
+| | 产品仓 | 体系仓 |
+|---|---|---|
+| 在哪 | `futures-broker-gateway/` | `Multi-Agents-Working-Schema/` |
+| 装什么 | 业务代码、测试、迁移件、看板渲染产物 | 本体系的规则、协调器、工具 |
+| 主检出 | 永远停在主干（对账／合并／推送） | 永远停在主干（同左） |
+| 门禁 | `tools/gate.py`（默认目标仓就是它） | `python3 -m pytest` ＋ `ruff` ＋ `tools/smoke.sh` |
+
+**worktree 的登记是分开的**：`git worktree list` **只列当前仓名下**的工作区。
+两个仓的 worktree 目录都放工作区根 `worktrees/`，但**各自由自己的主检出登记与回收**——
+在错的仓里执行 `git worktree remove`，git 会说不认识它。命名用前缀区分：
+产品仓 `<role>-<topic>`，体系仓 `maws-<role>-<topic>`。
+
 **主检出只做三件事**：对账（读）、合并（写）、推送。
-**任何代理不得在主检出内直接改代码。**
+**任何代理不得在任何主检出内直接改代码。**
 
 **`ref/` 是只读取样，不是第二个真相源**：里面的东西从别处取来对样子用，
 **不回流、不做渲染目标**；实时看板永远只有协调器渲染进主检出 `todo/` 的那一份。
@@ -45,16 +58,23 @@ futures-broker-gateway-workspace/          # 工作区根（不入库）
 ## 二、开工
 
 ```bash
+# 改【产品仓】——日常任务走这条
 cd /root/futures-broker-gateway-workspace/futures-broker-gateway
 git worktree add ../worktrees/<role>-<topic> -b <role>/<条目号>-<slug> main
 cd ../worktrees/<role>-<topic>
+
+# 改【体系仓】——改规则／协调器／工具走这条（同样不许在主检出改）
+cd /root/futures-broker-gateway-workspace/Multi-Agents-Working-Schema
+git worktree add ../worktrees/maws-<role>-<topic> -b <role>/maws-<slug> main
+cd ../worktrees/maws-<role>-<topic>
 ```
 
 | 项 | 规则 |
 |---|---|
-| worktree 目录 | `<role>-<topic>`，短横线小写，见名知意 |
-| 分支名 | `<role>/<条目号>-<slug>`，如 `dev/T123-auth-retry`、`ops/OPS7-migrate` |
+| worktree 目录 | 产品仓 `<role>-<topic>`／体系仓 `maws-<role>-<topic>`，短横线小写，见名知意 |
+| 分支名 | `<role>/<条目号>-<slug>`，如 `dev/T123-auth-retry`、`ops/OPS7-migrate`；体系仓加 `maws-` 前缀 |
 | 起点 | **一律从主干最新提交拉**——**从主干领任务，禁从分支线领** |
+| 哪个仓 | 任务默认从**产品仓**开；改本体系从**体系仓**开。**worktree 只能由它所属的那个仓回收** |
 
 **线分支**（`line/<线码>`，一线一支、长期存续）**仅作代码当天中转**。
 它**不承载立项、认领、回标**——那三件事是协调器动词，与分支无关。
@@ -108,6 +128,10 @@ git merge --ff-only <组好的合并提交>
 uv run pytest && uv run ruff check
 ```
 
+**两个仓同一个协议**：上述命令在**该分支所属的仓**里执行。
+`tools/merge_ff.sh` 的 `--main` 默认取 `git worktree list` 首个——**那就是该仓自己的主检出**，
+无需另指。
+
 **禁在主检出直接跑 `--no-ff` 合并。**
 共享检出的索引会被并发会话重置，**合并窗口越大越容易命中**。
 
@@ -137,6 +161,9 @@ uv run pytest && uv run ruff check
 | 6 | 门禁 | 合并后重跑测试与 lint（`tools/gate.py`），再推送 |
 | 7 | 测试范围口径 | 交付时收窄了范围（影响面）⇒ **按同一口径复跑**；口径对不上即退回 |
 
+> **门禁按仓而定**：产品仓用 `tools/gate.py`（它默认就服务产品仓，含按影响面的测试范围）；
+> 体系仓用 `python3 -m pytest` ＋ `ruff check .` ＋ `tools/smoke.sh`。两仓都不许用管道吞退出码。
+
 > **合入的 git 机制归 `tools/merge_ff.sh`**：私有 worktree 对**当前 main** `--no-ff` 组树，
 > 主检出**只** `git merge --ff-only`；脏 worktree 直接拒（不 stash）；快进竞态每轮**重新组树**。
 > 协调器（`bg_coordinator/merge.py`）只记**状态**（入队／串行闸／结果），永不执行 git——
@@ -157,8 +184,10 @@ uv run pytest && uv run ruff check
 **回收与合入是同一个动作**，一并做完——**禁只合入不回收**。
 
 ```bash
-git worktree remove ../worktrees/<role>-<topic>
-git branch -d <role>/<条目号>-<slug>
+# 在**该 worktree 所属的仓**里执行（产品仓或体系仓，别搞混）
+cd /root/futures-broker-gateway-workspace/<该仓主检出>
+git worktree remove ../worktrees/<worktree 目录名>
+git branch -d <该分支名>
 ```
 
 **留痕先落地，再删工作区。**
@@ -187,8 +216,8 @@ git branch -d <role>/<条目号>-<slug>
 ## 七、巡检
 
 ```bash
-git worktree list      # 查看现存
-git worktree prune     # 目录被手工删除后清理登记
+git worktree list      # 查看现存（**每个仓各自**——产品仓与体系仓都要看）
+git worktree prune     # 目录被手工删除后清理登记（同样按仓）
 ```
 
 超过约定周期未合并的 worktree 视为滞留，由 PM 对账处置（继续／移交／废弃）。
@@ -197,7 +226,7 @@ git worktree prune     # 目录被手工删除后清理登记
 
 ## 八、禁止
 
-1. **禁止在主检出直接开发**；
+1. **禁止在任何主检出直接开发**（产品仓与体系仓同规矩）；
 2. **禁止两个代理共用同一 worktree 或同一分支**；
 3. **禁止 `push --force` 到主干**；共享分支**不 rebase 已推送历史**；
 4. **禁止跨 worktree 改文件**（要改 → 立条目或报批）。
