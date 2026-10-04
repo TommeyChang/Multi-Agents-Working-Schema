@@ -176,6 +176,22 @@ _PROJECT_TOKENS = (
 )
 
 
+def test_role_docs_carry_no_hardcoded_local_endpoints() -> None:
+    """角色文件里不许出现**写死的本机地址＋端口**——具体端口是工程的落点。
+
+    实例：`agents/ops.md` 曾写着 `http://127.0.0.1:18080/health`。
+    这与"路径清单"是同一类问题：看起来像规则，实际是某一工程的巧合。
+    """
+    import re
+
+    pattern = re.compile(r"127\.0\.0\.1:\d+")
+    offenders: list[str] = []
+    for path in sorted((MAWS / "agents").glob("*.md")):
+        for m in pattern.finditer(path.read_text(encoding="utf-8")):
+            offenders.append(f"{path.name}: {m.group(0)}")
+    assert not offenders, "角色文件里出现写死的本机端口（应移入 bindings/）：\n  " + "\n  ".join(offenders)
+
+
 def test_role_docs_carry_no_project_specific_paths() -> None:
     """角色文件只写**换一个工程还成立**的东西。
 

@@ -18,7 +18,7 @@
 
 ## 用法
 
-    python3 tools/probe.py --url http://127.0.0.1:18080/health
+    python3 tools/probe.py --url http://<直连地址>/health   # 具体地址见工程绑定 §部署
     python3 tools/probe.py --url ... --fail-threshold 3 --state-dir /var/lib/bg-probe
     python3 tools/probe.py --url ... --json
 
@@ -83,7 +83,7 @@ def probe_once(url: str, timeout: float) -> tuple[bool, str]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="存活探针（只告警不重启）")
-    ap.add_argument("--url", required=True, help="直连探活地址，如 http://127.0.0.1:18080/health")
+    ap.add_argument("--url", required=True, help="直连探活地址（绕反代；具体见工程绑定 §部署）")
     ap.add_argument("--timeout", type=float, default=5.0, help="单次请求超时秒")
     ap.add_argument("--fail-threshold", type=int, default=3, help="连续失败达此数即判卡死")
     ap.add_argument("--state-dir", default=None, help="状态目录（默认 <本体系>/.state）")

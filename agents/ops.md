@@ -28,7 +28,7 @@
 **判据在本体系，执行也在本体系**：
 
 ```
-python3 tools/probe.py --url http://127.0.0.1:18080/health   # 存活探针（**只告警，不重启**）
+python3 tools/probe.py --url <直连探活地址>   # 存活探针（**只告警，不重启**）；地址见绑定 §部署
 python3 tools/preflight.py --root "$BG_COORDINATOR_ROOT"     # 开窗前预检：任一 BLOCK ⇒ 拒绝开窗
 ```
 
