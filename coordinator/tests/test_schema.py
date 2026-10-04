@@ -48,16 +48,26 @@ def test_schema_covers_every_runtime_role() -> None:
     assert runtime_keys <= schema_keys, f"未登记：{runtime_keys - schema_keys}"
 
 
-def test_subagents_never_dispatch() -> None:
-    """**子代理不能开子代理**——这是体系的结构约束，不是偏好。
+def test_only_declared_roles_dispatch_and_dev_recursion_is_the_only_exception() -> None:
+    """派单权**只给显式声明者**；子代理默认不得自开，**唯一例外是 dev 再开 dev**。
 
-    故派单这件事只可能发生在独立会话上。
+    口径来源（2026-10-04 用户定）：
+    - 「dev 是可以开 dev 子代理的」⇒ dev 有派单权（用于本条目内分工／扇出，按额度计数）；
+    - 「你不允许直开 dev」⇒ commander／parent 不得直开 dev ⇒ commander 没有派单权；
+    - 「线 pm 能否开 dev：用户口径未规定」⇒ pm 保持无派单权（**不自行推定**）。
+
+    这条以前写的是"子代理都不能开子代理"（结构禁令）；用户后来给的额度／复用／空转
+    三处控制取代了那道禁令，判据随之改口径——但**默认仍然是不许**，例外只有一处。
     """
+    by_key = {r.key: r for r in ROLES}
     for r in ROLES:
         if r.form == "subagent":
-            assert not r.can_dispatch, f"{r.key} 是子代理却声明了派单权"
+            allowed = {"dev"} if r.key == "dev" else set()
+            assert set(r.dispatch) <= allowed, f"{r.key} 是子代理却声明了派单权：{r.dispatch}"
         else:
             assert r.form == "independent"
+    assert "dev" not in by_key["commander"].dispatch, "commander 不得直开 dev（10-04 用户定）"
+    assert "dev" in by_key["dev"].dispatch, "dev 可再开 dev（10-04 用户定）"
 
 
 def test_every_dispatch_target_is_a_registered_role() -> None:

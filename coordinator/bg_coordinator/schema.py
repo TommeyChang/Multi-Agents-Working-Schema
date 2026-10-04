@@ -117,7 +117,10 @@ ROLES: tuple[RoleSpec, ...] = (
         key=Role.COMMANDER.value,
         form="independent",
         reports_to="user",
-        dispatch=("dev",),
+        # **不直开 dev**（2026-10-04 用户定：「你不允许直开 dev」）：
+        # commander 的正当动作止于立案行／冻结口径／取号／合入／推送／台账对账；
+        # 实现需求只产出「条目 ＋ 口径 ＋ 派单建议」，执行体由用户安排的 dev 会话承接。
+        dispatch=(),
         brief="用户接口 ＋ git 机制层 ＋ 最终仲裁",
         workface=("git worktree/分支/合并/推送", "主检出守护", "仲裁", "override"),
     ),
@@ -149,7 +152,10 @@ ROLES: tuple[RoleSpec, ...] = (
         key=Role.DEV.value,
         form="subagent",
         reports_to="tech-lead",
-        dispatch=(),
+        # **dev 可再开 dev**（2026-10-04 用户定：「dev 是可以开 dev 子代理的」）：
+        # 用于本条目内的分工／扇出，按额度计数（⑧）。这是**唯一的子代理派单权**——
+        # pm 等其它子代理仍不得自开；commander／parent 不得直开 dev。
+        dispatch=("dev",),
         brief="实现 ＋ 测试 ＋ 门禁；永不 merge/push、不改任务数据",
         workface=("本线工作面（见工程绑定 §线别与工作面）",),
     ),
@@ -368,10 +374,21 @@ def reconcile() -> SchemaReport:
             if role not in role_keys:
                 drifts.append(Drift("role-unknown", f"{verb} 允许未登记的角色 {role}"))
 
-    # ③ **子代理不得派单**——这是体系的结构约束，不是偏好
+    # ③ **子代理默认不得自开**，例外只有一处：`dev` 可再开 `dev`
+    #    （2026-10-04 用户定「dev 是可以开 dev 子代理的」）。
+    #    以前这是一条结构禁令（子代理一律无派单权）；用户后来用**额度／复用／空转**
+    #    三处控制取代了它，故口径改为"默认不许 + 显式例外"——例外写死在下面这一处，
+    #    免得"谁都能派"从后门长回来。
     for r in ROLES:
-        if r.form == "subagent" and r.can_dispatch:
+        if r.form != "subagent" or not r.can_dispatch:
+            continue
+        if r.key != Role.DEV.value:
             drifts.append(Drift("subagent-dispatch", f"{r.key} 是子代理却声明了派单权"))
+        elif set(r.dispatch) != {Role.DEV.value}:
+            drifts.append(Drift("subagent-dispatch", f"{r.key} 的子代理派单权只许是 dev：{r.dispatch}"))
+    #    另一端同一口径：**commander 不得直开 dev**（10-04 用户定） ⇒ 必须有角色能派 dev
+    if not any(Role.DEV.value in r.dispatch for r in ROLES):
+        drifts.append(Drift("dev-unreachable", "没有任何角色能派 dev——实现体就没人能开了"))
 
     # ⑤ **体系侧登记的绑定必须自洽**——登记了就要能解析、字段齐、不空值。
     #    绑定坏掉不该等到某个工程派单时才炸。

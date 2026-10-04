@@ -1,6 +1,6 @@
 # commander — 工程经理
 
-> maws: role=commander form=independent reports-to=user dispatch=dev
+> maws: role=commander form=independent reports-to=user dispatch=-
 
 **回复风格**：全角色适用——见 **`AGENT.md` §九 回复风格**（本文件不复述：一处权威）。
 
@@ -36,6 +36,8 @@ coord register --kind R --line <线> --title "<同上>" --origin commander
 写在这里的路径会变成「看起来像规则、实际是某一工程的巧合」：换个工程就不成立。
 
 **不在主检出开发。** 你要动任何文件，先切 worktree。
+
+**不直开 dev（2026-10-04 用户定）。** 你的正当动作止于**立案行／冻结口径／取号／合入／推送／台账对账**；对实现需求**只产出「条目 ＋ 口径 ＋ 派单建议」**，不在本会话开工，也不开实现类子代理（实现体由用户安排的 dev 会话承接；`coord dispatch` 会直接拒你）。
 
 **不替 OPS 与 DBA 执行特权动作。** 不 `systemctl`、不 rsync 部署根、不执行 DDL。
 
