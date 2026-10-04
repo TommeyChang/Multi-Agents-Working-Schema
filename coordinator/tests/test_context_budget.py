@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from bg_coordinator import context as ctx
@@ -46,6 +47,35 @@ def test_budget_check_has_teeth() -> None:
         "rules_total": ctx.RULES_TOTAL_MAX,
     }
     assert ctx.violations(edge) == []
+
+
+def test_every_role_file_carries_a_matching_reading_table() -> None:
+    """角色文件里的读表必须与 `context.ROLE_READS`（机器权威）**逐条一致**。
+
+    「按角色拆」拆的是**导航**（谁读哪几节），不是判据——同一份判据只写一次。
+    拆导航可以复制（每个角色一份），但复制出来的那份**必须能被对账**，
+    否则三个月后没人知道哪份是对的。这条就是那次对账。
+    """
+    for role, reads in ctx.ROLE_READS.items():
+        text = (MAWS / "agents" / f"{role}.md").read_text(encoding="utf-8")
+        assert "读表（本角色读什么）" in text, f"{role}.md 没有读表"
+        for rel, chapters in reads:
+            assert rel in text, f"{role}.md 的读表漏了 {rel}"
+            if chapters is not None:
+                for ch in chapters:
+                    assert f"§{ch}" in text, f"{role}.md 的读表漏了 {rel} §{ch}"
+        # 反向：读表里不许出现机器表里没有的规则文件
+        listed = set(re.findall(r"`(rules/[A-Za-z\-]+\.md)`", text))
+        assert listed <= {rel for rel, _ in reads}, f"{role}.md 多列了：{listed - {r for r, _ in reads}}"
+
+
+def test_per_role_read_budget_and_anchors() -> None:
+    """每个角色的读面在预算内，且**读表的锚点都还在**（节号变了立刻红）。"""
+    m = ctx.measure(MAWS)
+    assert not m["bad_anchors"], m["bad_anchors"]
+    assert not m["unread_files"], f"孤儿规则文件：{m['unread_files']}"
+    over = [v for v in ctx.violations(m) if "读面" in v]
+    assert not over, over
 
 
 def test_agent_doc_does_not_hardcode_sizes() -> None:

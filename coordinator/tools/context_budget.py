@@ -69,6 +69,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  按需面 rules/*.md 合计 {m['rules_total']} 字符 / 预算 {b['rules_total_max']}")
     for name, size in sorted(m["rules"].items(), key=lambda kv: -kv[1]):
         print(f"      {name:<28}{size:>6} 字符")
+    print("  按角色读面（预算是 ROLE_READ_MAX；含 AGENT ＋ 本角色文件 ＋ 它读的各节）")
+    for role, v in sorted(m["per_role"].items(), key=lambda kv: kv[1]["chars"]):
+        cap = b.get("role_read_max", {}).get(role, 0)
+        mark = "超" if cap and v["chars"] > cap else "ok"
+        print(f"    [{mark}] {role:<10}{v['chars']:>6} / {cap}")
     print("  结论 " + ("**超预算**：" + "；".join(over) if over else "全在预算内"))
     return 1 if over else 0
 

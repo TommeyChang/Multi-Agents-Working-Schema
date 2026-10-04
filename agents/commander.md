@@ -81,3 +81,16 @@ coord register --kind R --line <线> --title "<同上>" --origin commander
 **其四·禁 `push --force` 到主干。** 共享分支不 rebase 已推送历史。
 
 **其五·`override` 必须给理由。** 它是唯一的强制转换，进事件流供审计。
+
+## 其·读表（本角色读什么）
+
+> 权威在 `bg_coordinator/context.py::ROLE_READS`，本表由它对账（**判据单源，这里只导航**）。
+> 冷启动只读 `AGENT.md` ＋ 本文件；下面这些**在做对应动作时**才读。
+
+| 读 | 章 |
+|---|---|
+| `rules/COORDINATION.md` | §二、§三、§四、§六、§九 |
+| `rules/WORKSPACE.md` | §二、§五、§八、§九 |
+
+**可以不读**：四要素（PM 的面）、阈值闸与开工细节（dev/TL 的面）。
+省的不是判据，是**别人面的判据**——要查时按章号取，别整份预读（`AGENT.md` §三·3.4）。

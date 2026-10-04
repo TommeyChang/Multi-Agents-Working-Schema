@@ -37,10 +37,14 @@ from pathlib import Path
 
 #: 冷启动单文件预算（字符）——`AGENT.md` 全体必读
 AGENT_MAX = 5600
-#: 冷启动单文件预算（字符）——`agents/<角色>.md`，每个角色一份
-ROLE_MAX = 4300
-#: 冷启动合计预算（字符）：`AGENT.md` ＋ 任一角色文件（取最坏的那个角色）
-COLD_START_MAX = 9800
+#: 冷启动单文件预算（字符）——`agents/<角色>.md`，每个角色一份。
+#: 2026-10-04 由 4300 抬到 4700：角色文件里加了「读表」（谁读哪几节）——
+#: 它花 ~330 字符，换的是这个角色**少读几千字符**的共享面。这是一次有人负责的抬预算。
+ROLE_MAX = 4700
+#: 冷启动合计预算（字符）：`AGENT.md` ＋ 任一角色文件（取最坏的那个角色）。
+#: 2026-10-04 由 9800 抬到 10400：同一次抬 ROLE_MAX 的理由（角色文件加了读表），
+#: 合计面跟着动——**抬两个是对的，只抬一个会让合计悄悄失效**。
+COLD_START_MAX = 10400
 #: 按需面总量预算（字符）：`rules/*.md` 合计
 RULES_TOTAL_MAX = 30000
 #: **常规轮次实际会读的面**（字符）：`AGENT.md` ＋ 最重角色 ＋ 两份动作面主文件。
@@ -49,9 +53,69 @@ RULES_TOTAL_MAX = 30000
 #: "每份都刚好贴着上限"的合谋，所以要有一个**跨文件**的天花板。
 #: 查阅型细节（`rules/*-details.md`）**不计入**：它们只在需要时读，
 #: 计进来反而会奖励"把东西挪来挪去"。
-ROUTINE_MAX = 22000
+#: 2026-10-04 由 22000 抬到 22500：同一次抬法的第三处（角色文件变重是读表的代价）。
+ROUTINE_MAX = 22500
 #: 动作面主文件（常规轮次会读的两份 rules）
 ROUTINE_RULES = ("rules/COORDINATION.md", "rules/WORKSPACE.md")
+
+#: **每个角色的精确读表**——（规则文件, 章号元组）。章号 `None` = 整份读。
+#:
+#: 为什么权威在这里而不是各角色文件里：**同一份判据只写一次**。
+#: 一个角色一份完整工作流的写法会把状态机／动词表抄七遍，抄出来的第二份必然漂移
+#: ——本体系最贵的事故形态。所以拆的是**导航**（谁读哪几节），不是**判据**。
+#: 角色文件里那张读表由本表对账（`tests/test_context_budget.py`），两处不许不一致。
+#:
+#: 依据是**角色面**（ROLES 里的 workface）：dev 不改状态 ⇒ 不读动词表；
+#: pm 不取号、不派单 ⇒ 不读编号与子代理面；commander 不定义条目 ⇒ 不读四要素。
+ROLE_READS: dict[str, tuple[tuple[str, tuple[str, ...] | None], ...]] = {
+    "commander": (
+        ("rules/COORDINATION.md", ("二", "三", "四", "六", "九")),
+        ("rules/WORKSPACE.md", ("二", "五", "八", "九")),
+    ),
+    "po": (
+        ("rules/COORDINATION.md", ("二", "三", "四", "六", "九")),
+        ("rules/SUBAGENT.md", ("一", "二", "六", "七", "九", "十")),
+    ),
+    "pm": (
+        ("rules/COORDINATION.md", ("二", "三", "四", "五", "九")),
+        ("rules/WORKSPACE.md", ("四", "八")),
+    ),
+    "tech-lead": (
+        ("rules/COORDINATION.md", ("二", "三", "四", "五", "九")),
+        ("rules/WORKSPACE.md", ("二", "三", "四", "五", "八", "九", "十")),
+        ("rules/SUBAGENT.md", ("一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十二")),
+    ),
+    "dev": (
+        ("rules/COORDINATION.md", ("四", "九")),
+        ("rules/WORKSPACE.md", ("二", "三", "四", "八", "十")),
+        ("rules/SUBAGENT.md", ("二", "五", "七", "九")),
+    ),
+    "dba": (
+        ("rules/COORDINATION.md", ("二", "三", "四", "九")),
+        ("rules/WORKSPACE.md", ("五", "八", "九")),
+    ),
+    "ops": (
+        ("rules/COORDINATION.md", ("二", "三", "四", "九")),
+        ("rules/WORKSPACE.md", ("二", "四", "八", "九")),
+    ),
+}
+
+#: 每个角色"要读的面"上限（字符）：`AGENT.md` ＋ 角色文件 ＋ 它读的各节。
+#: **按角色**给上限（不是一刀切）：tech-lead 是执行入口，天然要读最多；
+#: dev 不改状态 ⇒ 完全不需要动词表与合入面。数字 = 实测 ＋ 约 4% 余量——
+#: 超了说明有人往这个角色的面上加了东西，得先删或显式抬。
+ROLE_READ_MAX: dict[str, int] = {
+    "commander": 16500,
+    "po": 16400,
+    "pm": 14000,
+    "tech-lead": 27300,
+    "dev": 15700,
+    "dba": 15800,
+    "ops": 14700,
+}
+
+#: 按需面（不进任何角色的必读集，读不读由事决定）：查阅型分册 ＋ 体系自身风险表
+ON_DEMAND: tuple[str, ...] = ("rules/RISKS.md",)
 
 #: 冷启动必读集合（相对体系根）
 COLD_FILES = ("AGENT.md",)
@@ -66,6 +130,47 @@ def est_tokens(text: str) -> int:
     """粗估 token 数（汉字 ≈1、其余 ≈1/4 字符）——**只用于人看，判据不认它**。"""
     cjk = len(_CJK.findall(text))
     return cjk + (len(text) - cjk) // 4
+
+
+def _section_sizes(path: Path) -> dict[str, int]:
+    """`## N、标题` → 该节字符数（含标题与下级 `###`）。没有 `## ` 的整份算一节。"""
+    text = path.read_text(encoding="utf-8")
+    idx = [m.start() for m in re.finditer(r"(?m)^## ", text)]
+    if not idx:
+        return {"": len(text)}
+    out: dict[str, int] = {}
+    for i, s in enumerate(idx):
+        e = idx[i + 1] if i + 1 < len(idx) else len(text)
+        head = text[s:].splitlines()[0]
+        num = re.match(r"##\s*([^、\s]+)、?", head)
+        out[num.group(1) if num else head] = e - s
+    return out
+
+
+def role_reads(maws_root: Path, role: str) -> tuple[dict, list[str]]:
+    """某角色的读面：`文件 → 节` 与**锚点错误**清单（章号在该文件里不存在）。"""
+    picked: dict = {}
+    bad: list[str] = []
+    for rel, chapters in ROLE_READS.get(role, ()):
+        path = maws_root / rel
+        if not path.is_file():
+            bad.append(f"{role}: 文件不存在 {rel}")
+            continue
+        if chapters is None:
+            picked[rel] = {"": len(path.read_text(encoding="utf-8"))}
+            continue
+        sizes = _section_sizes(path)
+        head = next((h for h in sizes if h != ""), "")
+        for ch in chapters:
+            if ch not in sizes:
+                bad.append(f"{role}: {rel} 没有 §{ch} 这一节")
+                continue
+            picked.setdefault(rel, {})[ch] = sizes[ch]
+        if head:
+            picked[rel]["(前言)"] = len(path.read_text(encoding="utf-8")) - sum(
+                v for k, v in sizes.items() if k != head
+            )
+    return picked, bad
 
 
 def measure(maws_root: Path) -> dict:
@@ -86,8 +191,29 @@ def measure(maws_root: Path) -> dict:
     routine = {**cold, **{k: roles.get(k, 0) for k in [worst_role[0]]},
                **{k: rules.get(k, 0) for k in ROUTINE_RULES}}
     routine.pop("", None)
+    per_role: dict = {}
+    bad_anchors: list[str] = []
+    for role in ROLE_READS:
+        picked, bad = role_reads(maws_root, role)
+        bad_anchors += bad
+        role_file = maws_root / "agents" / f"{role}.md"
+        base = sum(cold.values()) + (len(role_file.read_text(encoding="utf-8")) if role_file.is_file() else 0)
+        per_role[role] = {
+            "files": {k: sum(v.values()) for k, v in picked.items()},
+            "chars": base + sum(sum(v.values()) for v in picked.values()),
+        }
+    unread = [
+        str(p.relative_to(maws_root))
+        for p in sorted(maws_root.glob("rules/*.md"))
+        if "-details" not in p.name
+        and str(p.relative_to(maws_root)) not in ON_DEMAND
+        and not any(rel == str(p.relative_to(maws_root)) for reads in ROLE_READS.values() for rel, _ in reads)
+    ]
     return {
         "cold": cold,
+        "per_role": per_role,
+        "bad_anchors": bad_anchors,
+        "unread_files": unread,
         "roles": roles,
         "rules": rules,
         "cold_start_max": sum(cold.values()) + worst_role[1],
@@ -101,6 +227,7 @@ def measure(maws_root: Path) -> dict:
             "cold_start_max": COLD_START_MAX,
             "rules_total_max": RULES_TOTAL_MAX,
             "routine_max": ROUTINE_MAX,
+            "role_read_max": dict(ROLE_READ_MAX),
         },
     }
 
@@ -120,6 +247,17 @@ def violations(measured: dict) -> list[str]:
             f"冷启动合计 {total} 字符 > 预算 {COLD_START_MAX}"
             f"（最重角色：{measured.get('cold_start_worst_role', '?')}）"
         )
+    for role, over_cap in measured.get("per_role", {}).items():
+        cap = ROLE_READ_MAX.get(role)
+        if cap and over_cap["chars"] > cap:
+            out.append(
+                f"{role} 的读面 {over_cap['chars']} 字符 > 预算 {cap}"
+                "（AGENT ＋ 本角色文件 ＋ 它读的各节）"
+            )
+    for bad in measured.get("bad_anchors", []):
+        out.append(f"读表锚点失效：{bad}（节号变了或节被搬走 ⇒ 读表要跟着改）")
+    for rel in measured.get("unread_files", []):
+        out.append(f"{rel} 没有任何角色读它——孤儿文件（要么进读表，要么进 ON_DEMAND）")
     routine_total = measured.get("routine_total", 0)
     if routine_total > ROUTINE_MAX:
         out.append(

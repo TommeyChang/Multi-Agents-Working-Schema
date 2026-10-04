@@ -84,6 +84,7 @@ Multi-Agents-Working-Schema/          # 一个体系一个一级目录
 | 查阅型细节（记录字段表、目录布局、回收巡检、教训与实测） | `rules/*-details.md` |
 
 按需面**总用量也有上限**（`rules/*.md` 合计），同一把闸管。
+**每个角色读哪几节**见 `agents/<角色>.md` 的读表（机器权威：`context.ROLE_READS`）。
 
 ### 3.3 单源纪律
 
