@@ -230,6 +230,10 @@ class Task:
     #: **决定类别**——技术／设计／跨线。它决定归谁裁：
     #: 只有 `technical` 归 TL；`design` 与 `cross_line` 一律上 PO。
     category: str = ""
+    #: **条目级约束**——把"本条的硬要求"变成可核的声明（而不是文档里的一句话）。
+    #: 例：`zero_migration`（本条判定零迁移；确需迁移须另立 dba 评审＋ops 窗口条目）。
+    #: 未知约束**报缺口**（声明了却没人能核 ⇒ 暴露，不许静默算过）。
+    constraints: list[str] = field(default_factory=list)
 
     deps: list[str] = field(default_factory=list)
     owner: str = ""
@@ -265,6 +269,7 @@ class Task:
             "source_ref": self.source_ref,
             "scope": self.scope,
             "doc_sync": list(self.doc_sync),
+            "constraints": list(self.constraints),
             "category": self.category,
             "deps": list(self.deps),
             "owner": self.owner,
@@ -298,6 +303,7 @@ class Task:
             source_ref=d.get("source_ref", ""),
             scope=d.get("scope", ""),
             doc_sync=list(d.get("doc_sync", [])),
+            constraints=list(d.get("constraints", [])),
             category=d.get("category", ""),
             deps=list(d.get("deps", [])),
             owner=d.get("owner", ""),

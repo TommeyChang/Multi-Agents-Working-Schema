@@ -279,6 +279,7 @@ def cmd_define(args: argparse.Namespace) -> int:
         whitelist=_flat(args.whitelist),
         frozen=frozen,
         acceptance=_acceptance_items(args),
+        constraints=_flat(getattr(args, "constraint", None)) or None,
         deps=_flat(args.deps) or None,
     )
     return _write_verb(args, "define", p)
@@ -1165,6 +1166,7 @@ def build_parser() -> argparse.ArgumentParser:
         whitelist={"nargs": "*", "default": []},
         frozen={"nargs": "*", "default": []},
         acceptance={"nargs": "*", "default": []},
+        constraint={"nargs": "*", "default": None},
         deps={"nargs": "*", "default": None},
     )
     add_write("claim-dev", cmd_claim_dev)

@@ -70,6 +70,18 @@
 号保持（号已单调，不用重取）；若号被插队（比基线最大号还小），**让号重取**——
 号是资源，插队会让号顺序与链位顺序脱钩。
 
+## 四·五、测试口径（供「自称与事实」闸用）
+
+- **真库标记**：`db`；**自动打标**——采集期按夹具闭包判定（`tests/conftest.py`），
+  文件里可以不写，所以"文件里没写 marker"**不等于**不在真库；
+- **真库夹具**：`mysql_scratch`／`db_session`／`session_factory`／`db_engine`／
+  `scratch_store`／`scratch_url`／`_rd_database`／`migrated_engine`／`db_url`（见机读块）；
+- **基座**：`tests/conftest_mysql.py`；
+- **硬要求（本条已转成闸）**：**并发用例必须在 MySQL 载体跑**——
+  SQLite 忽略 `FOR UPDATE`，不得冒充并发正例。判据由 `tools/claims.py` 执行：
+  自称并发 ∧ 引用 `for_update` ∧ 既没标真库也没用真库夹具 ⇒ **BLOCK**。
+  **现状 0 命中 ＝ 这条此刻被遵守；闸的价值在下一个写错的人。**
+
 ## 五、资产与命名空间（DBA 面）
 
 - **受保护资产（GC 永不回收）**：`broker_gateway`、`broker_gateway_dev`、`bg_tmpl_*`（模板池）；
@@ -145,6 +157,19 @@
     "tool": "alembic",
     "naming": "<NNNN>_<slug>",
     "gotchas": ["alembic check 只对 head 比 metadata，不校验降级保真"]
+  },
+  "tests": {
+    "db_marker": "db",
+    "db_fixtures": [
+      "mysql_scratch", "mysql_scratch_db", "db_session", "mysql_scratch_url",
+      "session_factory", "db_engine", "scratch_store", "scratch_url",
+      "_rd_database", "migrated_engine", "db_url"
+    ],
+    "substrate": "tests/conftest_mysql.py",
+    "auto_marker": "采集期按夹具闭包自动打 db 标（tests/conftest.py）；文件里可以不写",
+    "claims": [
+      "并发用例必须在 MySQL 载体跑——SQLite 忽略 FOR UPDATE，不得冒充并发正例"
+    ]
   },
   "protected_assets": ["broker_gateway", "broker_gateway_dev", "bg_tmpl_*"],
   "scratch_namespace": "bg_",

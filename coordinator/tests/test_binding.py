@@ -24,6 +24,7 @@ _GOOD = {
     "lines": {"A": {"name": "auth", "workface": ["auth/"]}},
     "gate": {"entry": "tools/gate.py"},
     "migrations": {"dir": "alembic/versions"},
+    "tests": {"db_marker": "db", "db_fixtures": ["db_session"]},
     "protected_assets": ["broker_gateway"],
     "scratch_namespace": "bg_",
     "window": ["停服", "起服"],

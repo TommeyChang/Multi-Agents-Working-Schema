@@ -187,6 +187,7 @@ BINDING_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("lines", "dict", "线别 → {name, workface[]}：本工程有哪几条线、各线工作面"),
     ("gate", "dict", "门禁：入口／快跑标记／域映射／共享面／静态腿／发布口径／真库并发纪律"),
     ("migrations", "dict", "迁移目录、工具、命名、已知坑"),
+    ("tests", "dict", "测试口径：真库标记／真库夹具／基座／**自称与事实**的硬要求"),
     ("protected_assets", "list", "受保护资产（回收器永不触碰）"),
     ("scratch_namespace", "str", "scratch 命名空间前缀"),
     ("window", "list", "部署窗口段序"),

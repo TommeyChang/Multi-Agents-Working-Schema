@@ -395,3 +395,45 @@ def allowed_writer(role: Role) -> bool:
     这个函数表达的是"协调器接受哪些角色作为写入发起方"——不是文件权限。
     """
     return role in set(Role)
+
+
+# ---------------------------------------------------------------------------
+# 条目级约束——**把"本条的硬要求"变成可核的声明**
+# ---------------------------------------------------------------------------
+
+#: 已登记的约束：**每一条都必须有判据**，否则等于没声明。
+#:
+#: 这个表就是"事故处置条款"的归宿：以前它们写在条目描述或文档里，
+#: 是个承诺，靠人记；现在写在这里，就有东西能在提交/合并那一刻把它核掉。
+KNOWN_CONSTRAINTS: dict[str, str] = {
+    "zero_migration": "本条判定零迁移；确需迁移 ⇒ 另立条目（dba 评审 ＋ ops 窗口）",
+    "no_doc_change": "本条不改文档（若改了，须与它所描述的面同批——见文档同步口径）",
+}
+
+
+def unknown_constraints(constraints: list[str]) -> list[str]:
+    """声明了但没人能核的约束——**必须暴露**（否则它就是一句安慰）。"""
+    return [f"未知约束 `{c}`——没有判据的约束等于没声明" for c in constraints if c not in KNOWN_CONSTRAINTS]
+
+
+def constraint_violations(
+    constraints: list[str], changed_files: list[str], migrations_dir: str
+) -> list[str]:
+    """**声明 vs 事实**：把条目级硬要求核成 BLOCK 清单。
+
+    例：声明 `zero_migration` 却动了迁移目录 ⇒ 拦，并给出**该走的正当路径**
+    （另立条目：dba 评审 ＋ ops 窗口）——而不是让人猜该找谁。
+    """
+    out = unknown_constraints(constraints)
+    prefix = migrations_dir.rstrip("/") + "/" if migrations_dir else ""
+    for c in constraints:
+        if c not in KNOWN_CONSTRAINTS:
+            continue
+        if c == "zero_migration" and prefix:
+            hit = [f for f in changed_files if f.startswith(prefix)]
+            if hit:
+                out.append(
+                    f"声明零迁移，却改了迁移件 {hit[:2]}——"
+                    "确需迁移 **另立条目**（dba 评审 ＋ ops 窗口），不在本条里做"
+                )
+    return out

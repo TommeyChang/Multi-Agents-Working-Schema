@@ -436,6 +436,7 @@ def _bind_migrations(tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
                 "lines": {"D": {"name": "d", "workface": ["data_access/"]}},
                 "gate": {"entry": "tools/gate.py"},
                 "migrations": {"dir": vdir, "base": "base"},
+                "tests": {"db_marker": "db", "db_fixtures": ["db_session"]},
                 "protected_assets": ["x"],
                 "scratch_namespace": "bg_",
                 "window": ["起服"],
@@ -512,3 +513,57 @@ def test_migration_leg_not_applicable_without_declaration(
 
     rc = _run(root, tid, repo)
     assert rc == 0, capsys.readouterr()
+
+
+# ---------------------------------------------------------------------------
+# 条目级约束：**把"本条的硬要求"核成事实**
+# ---------------------------------------------------------------------------
+
+
+def test_zero_migration_constraint_blocks_migration_change(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """声明"零迁移"却动了迁移件 ⇒ BLOCK，并给出**该走的正当路径**。
+
+    这条原本写在条目描述里（"本条判定零迁移，若确需迁移另立 dba 评审＋ops 窗口条目"）——
+    是个承诺，靠人记；现在声明进协调器，提交那一刻核。
+    """
+    repo = _init_repo(tmp_path)
+    vdir = "alembic/versions"
+    _base_chain(repo, vdir, [("0001", None)])
+    _stage(repo, f"{vdir}/0002_new.py", 'revision = "0002"\ndown_revision = "0001"\n')
+    root = tmp_path / "coord"
+    _bind_migrations(tmp_path, repo, monkeypatch, vdir)
+
+    # **带约束地**定稿（经协调器动词，不手改状态文件）
+    assert _cli(root, "init")[0] == 0
+    tid = _register(root)
+    assert _cli(root, "claim-analyze", "--id", tid, "--role", "pm:pm-D:D")[0] == 0
+    assert _cli(
+        root, "define", "--id", tid, "--role", "pm:pm-D:D",
+        "--whitelist", "alembic/**", "--acceptance", "test:t",
+        "--constraint", "zero_migration",
+    )[0] == 0
+
+    rc = _run(root, tid, repo)
+    out = capsys.readouterr()
+    assert rc == 1, out
+    assert "零迁移" in out.out
+    assert "另立条目" in out.out and "dba 评审" in out.out
+
+
+def test_unknown_constraint_is_rejected_at_define(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """**没有判据的约束等于没声明** ⇒ 定稿时当场拒。"""
+    root = tmp_path / "coord"
+    assert _cli(root, "init")[0] == 0
+    tid = _register(root)
+    assert _cli(root, "claim-analyze", "--id", tid, "--role", "pm:pm-D:D")[0] == 0
+    code, _out, err = _cli(
+        root, "define", "--id", tid, "--role", "pm:pm-D:D",
+        "--whitelist", "a/**", "--acceptance", "test:t", "--constraint", "别乱改",
+    )
+    capsys.readouterr()
+    assert code == 1
+    assert "未知约束" in err, err

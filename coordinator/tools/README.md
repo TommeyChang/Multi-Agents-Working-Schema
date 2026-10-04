@@ -17,6 +17,7 @@
 | `scratch_gc.py` | **孤儿 scratch 库回收**：命名空间／资产豁免／pid 活性／年龄 TTL／二次判定（**默认 dry-run**） | 改编自取样件 `ref/tools/scripts/dba/mysql_test_db_gc.sh` |
 | `probe.py` | **存活探针**：直连探活、连续失败达阈告警——**没有任何重启路径** | 改编自取样件（`liveness_probe.sh` 的"只告警不重启"口径） |
 | `preflight.py` | **开窗前预检**：五条腿把 fail-closed 判据前移，任一 BLOCK ⇒ 拒绝开窗 | 改编自取样件（`ops/preflight.py` 的"判据前移"口径） |
+| `claims.py` | **自称与事实**：把事故条款变成可核判据（首条：并发正例必须在 MySQL 载体） | 本体系自研（口径来自目标仓的硬要求，登记在绑定 §测试） |
 | `smoke.sh` | 冒烟：协调器端到端一口气跑通 | 本体系自研 |
 | `watch.sh` | 监视器：脚本定时，**有 delta 才唤醒会话** | 本体系自研 |
 

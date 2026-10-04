@@ -102,6 +102,7 @@ from bg_coordinator.models import Task  # noqa: E402
 from bg_coordinator.storage import Store, StoreError  # noqa: E402
 from bg_coordinator.validators import (  # noqa: E402
     changed_docs,
+    constraint_violations,
     touches_design_surface,
     whitelist_covers,
 )
@@ -198,6 +199,16 @@ def judge(
     for reason in blocks:
         blocked.append(Finding(BLOCK, task_id, reason))
 
+    # **条目级约束**：声明与改动必须对上（例：声明"零迁移"却动了迁移件 ⇒ BLOCK）。
+    #
+    # 为什么要在提交时判：这类硬要求原本写在条目描述里，是个**承诺**——
+    # 承诺与事实对齐全靠人记；等到合并或上线才发现，返工最贵。
+    # 新增一条可核约束只需往 `KNOWN_CONSTRAINTS` 加一行（判据在 engine 里）。
+    if repo is not None and task.constraints:
+        vdir = _migrations_dir(repo)
+        for reason in constraint_violations(list(task.constraints), files, vdir):
+            blocked.append(Finding(BLOCK, task_id, reason))
+
     # 设计面：改了契约／口径的成文表达，就得同批把描述它的文档也改了。
     surface = touches_design_surface(files)
     if surface and not changed_docs(files):
@@ -211,6 +222,18 @@ def judge(
             )
 
     return Verdict(task=task_id, files=files, blocked=blocked, warns=warns)
+
+
+def _migrations_dir(repo: Path) -> str:
+    """迁移目录从绑定取（工程落点归工程）；取不到就空串（约束判定退化为"无法判"）。"""
+    _src, path = locate_binding(repo)
+    if path is None:
+        return ""
+    data, _err = load_binding(path)
+    if not data:
+        return ""
+    mconf = data.get("migrations") if isinstance(data.get("migrations"), dict) else {}
+    return str(mconf.get("dir") or "").strip()
 
 
 def migration_blocks(files: list[str], repo: Path) -> list[str]:

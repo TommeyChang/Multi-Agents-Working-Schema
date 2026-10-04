@@ -209,6 +209,15 @@ check "preflight 出裁决（0/1 皆合法）" bash -c \
      --json > '$SANDBOX/preflight.json' 2>/dev/null; rc=\$?; [ \$rc -eq 0 ] || [ \$rc -eq 1 ]"
 check "preflight 五条腿齐全" bash -c "grep -q '触库可用' '$SANDBOX/preflight.json' && grep -q '宿主余量' '$SANDBOX/preflight.json'"
 
+echo "⑩ 把条款变成闸：自称与事实／条目级约束"
+mkdir -p "$REPO/tests/demo"
+printf 'import pytest\n\n\ndef test_race_for_row(session) -> None:\n    """并发争用：FOR UPDATE 串行化。"""\n    session.query(X).with_for_update().first()\n' > "$REPO/tests/demo/test_race.py"
+check_fail "自称并发＋依赖真锁却在 SQLite ⇒ BLOCK" "$PY" "$PKG_ROOT/tools/claims.py" --target "$REPO"
+printf 'import pytest\n\n\n@pytest.mark.db\ndef test_race_for_row(session) -> None:\n    """并发争用：FOR UPDATE 串行化。"""\n    session.query(X).with_for_update().first()\n' > "$REPO/tests/demo/test_race.py"
+check "标了真库 ⇒ 放行" "$PY" "$PKG_ROOT/tools/claims.py" --target "$REPO"
+check_fail "未知约束 ⇒ 定稿即拒（没有判据的约束等于没声明）" coord define --id "$TID9" --role pm:pm-D:D \
+                           --whitelist 'a/**' --acceptance 'test:pytest' --constraint 别乱改
+
 echo
 echo "[smoke] 通过 $pass ／ 失败 $fail"
 [ "$fail" -eq 0 ] || exit 1

@@ -73,6 +73,8 @@ class Params:
     frozen: list[str] | None = None
     acceptance: list[AcceptanceItem] | None = None
     priority: Priority | None = None
+    #: 条目级约束（可核的硬要求）；未知约束会被判缺口，不许静默忽略
+    constraints: list[str] | None = None
 
     commit: str = ""
     gate_cmd: str = ""
@@ -452,6 +454,23 @@ def apply(  # noqa: C901 - 动词分派本身就是一个 switch，拆开反而�
         rej = rule_3_four_elements(merged)
         if rej:
             return _reject(new, ts, verb, task_id, actor, expect_ver, rid, rej, task=task)
+        if p.constraints:
+            from .validators import unknown_constraints
+
+            bad = unknown_constraints([c for c in p.constraints if c])
+            if bad:
+                # **声明了却没人能核 ⇒ 当场拒**：留着它就是一句安慰
+                return _reject(
+                    new, ts, verb, task_id, actor, expect_ver, rid,
+                    Rejection(
+                        Code.E_INCOMPLETE,
+                        "；".join(bad),
+                        id=task_id,
+                        owner=actor.name,
+                        hint="只声明有判据的约束；新约束先在 validators.KNOWN_CONSTRAINTS 登记判据",
+                    ),
+                    task=task,
+                )
 
     if verb == "claim-dev":
         ready = evaluate(new.tasks, task, Role.TECH_LEAD, task.line, new.quota)
@@ -1080,6 +1099,8 @@ def _apply_effects(task: Task, verb: str, actor: Actor, p: Params, ts: str) -> N
             task.frozen = p.frozen
         if p.acceptance is not None:
             task.acceptance = p.acceptance
+        if p.constraints is not None:
+            task.constraints = [c for c in p.constraints if c]
         if p.deps is not None:
             task.deps = p.deps
         task.definer = actor.name
