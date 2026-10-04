@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bg-coordinator"
+version = "0.1.0"
+description = "任务协调器——多角色调度的协议层与存储层（讨论稿 v2 §1~§11 的落地）"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+coord = "bg_coordinator.cli:main"
+
+[tool.setuptools]
+packages = ["bg_coordinator"]
+
+# 与仓库 `../futures-broker-gateway/pyproject.toml` 对齐：只设 target-version，**不设 line-length**
+# （仓内约定沿用 ruff 默认）。规则集合刻意收紧了一档，便于自证。
+[tool.ruff]
+target-version = "py312"
+# 仓内不显式设置 line-length（沿用 88）。本模块的中文文档串与状态机表格较宽，
+# 88 会把语义单位切碎、损害可读性，故显式放宽到 110 并在此留痕。
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RET"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

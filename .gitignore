@@ -1,0 +1,20 @@
+# —— 本体系（MAWS）的 .gitignore ——
+#
+# 取样件：**不进仓**。ref/ 装的是从别的项目取来的原件
+# （真实任务板 todo/ ＋ 工具源码 tools/），属于别人的内容，
+# 留在本地当"改东西时对样子"的参考即可。出处与哈希见 ref/README.md。
+ref/
+
+# 运行时产物：状态根与门禁证据。它们是"跑出来的"，不是源代码。
+# 状态默认落在 <体系根>/.state；门禁原始输出落在 <体系根>/.evidence。
+.state/
+.evidence/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 编辑器/系统噪声
+.DS_Store
+*.swp
