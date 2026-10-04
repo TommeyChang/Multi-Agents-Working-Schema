@@ -64,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"    [{mark}] {name:<28}{size:>6} 字符")
     print(f"  冷启动合计（AGENT ＋ 最重角色 {m['cold_start_worst_role']}）"
           f"{m['cold_start_max']} 字符 / 预算 {b['cold_start_max']}")
+    print(f"  常规轮次读的面合计 {m['routine_total']} 字符 / 预算 {b['routine_max']}"
+          f"（{'、'.join(m['routine'])}）")
     print(f"  按需面 rules/*.md 合计 {m['rules_total']} 字符 / 预算 {b['rules_total_max']}")
     for name, size in sorted(m["rules"].items(), key=lambda kv: -kv[1]):
         print(f"      {name:<28}{size:>6} 字符")

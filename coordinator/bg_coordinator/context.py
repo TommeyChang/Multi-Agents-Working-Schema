@@ -43,6 +43,15 @@ ROLE_MAX = 4300
 COLD_START_MAX = 9800
 #: 按需面总量预算（字符）：`rules/*.md` 合计
 RULES_TOTAL_MAX = 30000
+#: **常规轮次实际会读的面**（字符）：`AGENT.md` ＋ 最重角色 ＋ 两份动作面主文件。
+#:
+#: 为什么单列这一条：按需面里真正每轮都翻的就是这四份——总量上限管不住
+#: "每份都刚好贴着上限"的合谋，所以要有一个**跨文件**的天花板。
+#: 查阅型细节（`rules/*-details.md`）**不计入**：它们只在需要时读，
+#: 计进来反而会奖励"把东西挪来挪去"。
+ROUTINE_MAX = 22000
+#: 动作面主文件（常规轮次会读的两份 rules）
+ROUTINE_RULES = ("rules/COORDINATION.md", "rules/WORKSPACE.md")
 
 #: 冷启动必读集合（相对体系根）
 COLD_FILES = ("AGENT.md",)
@@ -74,6 +83,9 @@ def measure(maws_root: Path) -> dict:
         for p in sorted(maws_root.glob(ON_DEMAND_GLOB))
     }
     worst_role = max(roles.items(), key=lambda kv: kv[1]) if roles else ("", 0)
+    routine = {**cold, **{k: roles.get(k, 0) for k in [worst_role[0]]},
+               **{k: rules.get(k, 0) for k in ROUTINE_RULES}}
+    routine.pop("", None)
     return {
         "cold": cold,
         "roles": roles,
@@ -81,11 +93,14 @@ def measure(maws_root: Path) -> dict:
         "cold_start_max": sum(cold.values()) + worst_role[1],
         "cold_start_worst_role": worst_role[0],
         "rules_total": sum(rules.values()),
+        "routine": {k: v for k, v in routine.items() if v},
+        "routine_total": sum(routine.values()),
         "budgets": {
             "agent_max": AGENT_MAX,
             "role_max": ROLE_MAX,
             "cold_start_max": COLD_START_MAX,
             "rules_total_max": RULES_TOTAL_MAX,
+            "routine_max": ROUTINE_MAX,
         },
     }
 
@@ -104,6 +119,12 @@ def violations(measured: dict) -> list[str]:
         out.append(
             f"冷启动合计 {total} 字符 > 预算 {COLD_START_MAX}"
             f"（最重角色：{measured.get('cold_start_worst_role', '?')}）"
+        )
+    routine_total = measured.get("routine_total", 0)
+    if routine_total > ROUTINE_MAX:
+        out.append(
+            f"常规轮次读的面合计 {routine_total} 字符 > 预算 {ROUTINE_MAX}"
+            "（AGENT ＋ 最重角色 ＋ 两份动作面主文件）"
         )
     rules_total = measured.get("rules_total", 0)
     if rules_total > RULES_TOTAL_MAX:

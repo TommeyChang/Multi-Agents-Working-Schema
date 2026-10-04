@@ -75,12 +75,13 @@ Multi-Agents-Working-Schema/          # 一个体系一个一级目录
 
 ### 3.2 按需读
 
-| 文件 | 什么时候读 |
+| 什么时候 | 读什么 |
 |---|---|
-| `rules/COORDINATION.md` | 查动词、状态、不变量的**具体判据**时 |
-| `rules/WORKSPACE.md` | **开工动代码、交付、合并**时 |
-| `rules/SUBAGENT.md` | **派单前**（仅派单方） |
-| `rules/RISKS.md` | 设计变更时 |
+| 做动作（动词／状态／不变量／四要素／编号） | `rules/COORDINATION.md` |
+| 动代码、交付、合入 | `rules/WORKSPACE.md` |
+| 派单前（仅派单方） | `rules/SUBAGENT.md` |
+| 设计变更 | `rules/RISKS.md` |
+| 查阅型细节（记录字段表、目录布局、回收巡检、教训与实测） | `rules/*-details.md` |
 
 按需面**总用量也有上限**（`rules/*.md` 合计），同一把闸管。
 

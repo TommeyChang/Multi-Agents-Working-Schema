@@ -26,6 +26,9 @@ RULE_DOCS: tuple[str, ...] = (
     "rules/WORKSPACE.md",
     "rules/SUBAGENT.md",
     "rules/RISKS.md",
+    # 查阅面分册：动作面主文件里留锚指向它们（拆出是为了控固定上下文规模）
+    "rules/COORDINATION-details.md",
+    "rules/WORKSPACE-details.md",
 )
 
 #: 角色文档**可解析头部**：`> maws: role=<key> form=<form> reports-to=<who> dispatch=<a,b>`
