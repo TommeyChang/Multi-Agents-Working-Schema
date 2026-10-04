@@ -333,6 +333,10 @@ blocked_from  block_reason  frozen_snapshot
 
 **上下文是稀缺资源，与子代理额度同级。** 本节把「怎么读」定死。
 
+**规模有预算、有闸**：冷启动（`AGENT.md` ＋ `agents/<角色>.md`）与按需面（`rules/*.md`）
+的总量都在 `bg_coordinator/context.py` 定了上限，`tools/context_budget.py` 现算并拦截——
+**超了不是警告，是红**。要加内容先删，或显式抬预算（改一处常量 ＋ 写明理由）。
+
 ### 9.1 现状的教训（实测）
 
 | 面 | 实测规模 | 问题 |

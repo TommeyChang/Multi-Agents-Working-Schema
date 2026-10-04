@@ -48,6 +48,9 @@ CARRIED: tuple[tuple[str, str], ...] = (
     ("界内", "rules/COORDINATION.md"),
     # pm 撰写标准（2026-10-01）
     ("标准撰写", "agents/pm.md"),
+    # 固定上下文规模必须有预算、有闸（用户口径：一定要控制固定上下文的规模）
+    ("context_budget.py", "AGENT.md"),
+    ("规模有预算、有闸", "rules/COORDINATION.md"),
 )
 
 #: 用户口径里**本体系刻意不管**的那些（工程落点或工程自己的文档面）。

@@ -241,6 +241,8 @@ check "reserve alembic 首个" bash -c "'$PY' -m bg_coordinator.cli --root '$ROO
 check_fail "reserve alembic 第二个 ⇒ E_NUMBER_INFLIGHT" "$PY" -m bg_coordinator.cli --root "$ROOT" reserve --family alembic --holder dba-b --task T-D-2
 
 # 监视器：有 delta 唤醒 / 无 delta 静默 / 任意 cwd 可跑
+check "context_budget 在预算内（0）" "$PY" "$PKG_ROOT/tools/context_budget.py"
+check_fail "context_budget 坏根 ⇒ 用法错（2）" "$PY" "$PKG_ROOT/tools/context_budget.py" --root /tmp
 check "watch 有 delta ⇒ 唤醒（0）" env BG_COORDINATOR_ROOT="$ROOT" BG_COORDINATOR_STATE="$SANDBOX/watch" \
                                    "$PKG_ROOT/tools/watch.sh"
 check "watch 无 delta ⇒ 静默（10）" bash -c \
