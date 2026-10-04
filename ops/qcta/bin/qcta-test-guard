@@ -1,0 +1,200 @@
+#!/bin/bash
+# qcta-test-guard —— 测试并发与内存护栏 (2026-10-03 建立, 2026-10-04 加固)
+#
+# 背景（为什么需要）:
+#   2026-10-03 当天连续三次因测试拖垮整机:
+#     · 单个 pytest 进程跑 2004 个用例, 内存累积到 3.4G 常驻 + 7.2G swap = 10.7G;
+#     · 吃光 7.4G 物理内存 + 8G swap 后进入 D 状态 thrashing, 整机失去响应;
+#     · 连带把 dsh-web 拖成假死(GUI 20 秒无响应), 把 bg 应用的事件循环拖到反复停摆 10s
+#       (OPS-142 形态, bg-liveness 连续 166 次失败)。
+#   分组测试后单进程内存已降到 150~250MB, 但并行测试数量仍可能失控(实测同时 10 个),
+#   4 核机器上 CPU 与内存会被瞬间抢光。本护栏是最后一道自动防线。
+#
+# 作用: 每 30s 由 qcta-test-guard.timer 触发一次, 只针对 pytest 进程:
+#   ① 单进程 RSS 超 MAX_RSS_MB      → 终止 (抓"单进程失控膨胀")
+#   ② pytest 并发数超 MAX_CONCURRENT → 从最占内存的开始终止, 直到达标 (抓"并行数失控")
+#   不触碰任何服务进程(dsh-web/bg/mysql/nginx 等), 也不碰非 pytest 的开发命令。
+#
+# 阈值配置: /etc/default/qcta-test-guard (MAX_RSS_MB / MAX_CONCURRENT), 缺省 2048MB / 4 个。
+#   参考: 正常分组测试单进程 150~250MB, 所以 2048MB 只会命中真正的失控进程。
+#
+# 手动查看: journalctl -u qcta-test-guard -n 20
+# 临时停用: systemctl disable --now qcta-test-guard.timer
+# 干跑验证: DRY_RUN=1 /usr/local/bin/qcta-test-guard   (只打印不杀)
+#
+# ============================================================================
+# 2026-10-04 20:26 加固 —— 磁盘写爆事故复盘后新增 ③④ 两条规则
+# ----------------------------------------------------------------------------
+# 事故: 磁盘 1.5 小时内从 73G 涨到 136G (39%→73%), 只剩 53G。
+#   元凶是两个孤儿 pytest-xdist worker (PID 2045364 / 2241556, 均为 PPID=1),
+#   在 dev-TD194 worktree 里空转 1h49m / 1h23m, 各占 ~90% CPU, 累计写入
+#   40.0GB / 32.0GB, 全部落在 /tmp/t194-15-tests(38G) 与 /tmp/t194-15-triage(30G)。
+#   诱因: 测试命令超时/被杀后, xdist 孙进程不随之退出, PPID 变成 1 继续刷盘。
+#
+# 暴露出的两个盲区 (本次修复的就是它们):
+#   盲区一: 旧的 collect() 只认 `pgrep -f -- '-m pytest'`。
+#           xdist worker 的命令行是
+#             python -u -c "import sys;exec(eval(sys.stdin.readline()))"
+#           —— 不含 `-m pytest`, 于是护栏对"worker 失控"完全失明。
+#   盲区二: 旧护栏对"父进程已死却仍在跑"的测试进程没有任何处理。
+#           而磁盘事故里最危险的恰恰就是这一类。
+#
+# 新增规则:
+#   ③ 孤儿测试进程回收: 凡是 pytest 主进程或 xdist worker, 只要 PPID=1
+#      (父进程已死, 退出码与输出已无人回收 = 纯垃圾) 且已运行超过
+#      ORPHAN_GRACE_SEC, 即终止。宽限期默认 900s, 给"故意 nohup 后台跑"的
+#      正常场景留出余量; 磁盘风险由 qcta-tmp-reap.timer(每 10 分钟)兜底。
+#   ④ xdist worker 纳入单进程 RSS 监管: worker 与主进程一样受 ① 约束,
+#      避免"主进程内存正常、worker 悄悄膨胀"逃过监管。
+#
+# 同时修正: 终止主进程时改为递归终止整棵子进程树 (kill_tree)。
+#   旧实现只 kill 主进程, worker 会变成孤儿继续跑 —— 正是事故的成因。
+#
+# 保持不变: ② 并发计数仍然只数 pytest 主进程, 不数 worker,
+#   否则 `-n 4` 会被算成 5 个而误杀。
+# ============================================================================
+set -uo pipefail
+
+# 调用方通过环境变量显式传入的阈值优先于配置文件。
+# 必须先于 source 抓取: 配置文件里的赋值是无条件的, 会把传入值直接覆盖掉
+# (2026-10-04 首版就把 ORPHAN_GRACE_SEC=5 覆盖回 900, 干跑验证全部失真)。
+_env_MAX_RSS_MB="${MAX_RSS_MB:-}"
+_env_MAX_CONCURRENT="${MAX_CONCURRENT:-}"
+_env_ORPHAN_GRACE_SEC="${ORPHAN_GRACE_SEC:-}"
+_env_DRY_RUN="${DRY_RUN:-}"
+
+# shellcheck disable=SC1091
+[ -r /etc/default/qcta-test-guard ] && . /etc/default/qcta-test-guard
+
+MAX_RSS_MB="${_env_MAX_RSS_MB:-${MAX_RSS_MB:-2048}}"
+MAX_CONCURRENT="${_env_MAX_CONCURRENT:-${MAX_CONCURRENT:-4}}"
+ORPHAN_GRACE_SEC="${_env_ORPHAN_GRACE_SEC:-${ORPHAN_GRACE_SEC:-900}}"
+DRY_RUN="${_env_DRY_RUN:-${DRY_RUN:-0}}"
+
+log() { echo "[test-guard] $*"; }
+
+# --- 进程身份判定 ---------------------------------------------------------
+# 返回 master / worker / 空
+role_of() {   # $1=pid
+    local cmd argv0 base
+    # 用 cat 读而不是 shell 重定向: 进程在枚举与读取之间退出时,
+    # shell 重定向失败的错误会在 2>/dev/null 生效之前就打到 stderr,
+    # 把 journal 刷满 "No such file or directory"。cat 自己吞掉即可。
+    cmd=$(cat -- "/proc/$1/cmdline" 2>/dev/null | tr '\0' ' ') || return 0
+    [ -n "$cmd" ] || return 0
+    argv0=${cmd%% *}
+    base=${argv0##*/}
+    if [[ "$cmd" == *"-m pytest"* || "$base" == "pytest" ]]; then
+        echo master; return 0
+    fi
+    if [[ "$cmd" == *"sys.stdin.readline"* ]]; then
+        echo worker; return 0
+    fi
+    echo ""
+}
+
+# 读取 ppid 与 starttime(时钟滴答); comm 可能含空格, 所以从最后一个 ") " 之后取字段
+read_proc_stat() {   # $1=pid -> "ppid starttime"
+    local line
+    line=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+    line=${line##*') '}
+    # 从 state 开始: [0]=state [1]=ppid ... [19]=starttime
+    # 注意必须用数组下标取第 20 个字段: bash 里 "$20" 是 "${2}0" 而不是第 20 个参数,
+    # 2026-10-04 首版就踩了这个坑 —— starttime 被读成 "10", 算出的进程年龄
+    # 恒等于系统 uptime, 于是宽限期形同虚设, 所有孤儿进程都会被立刻杀掉。
+    local -a f
+    read -r -a f <<< "$line"
+    echo "${f[1]} ${f[19]}"
+}
+
+proc_age() {   # $1=starttime(ticks) -> 秒
+    local up hz
+    up=$(cut -d' ' -f1 /proc/uptime); up=${up%.*}
+    hz=$(getconf CLK_TCK)
+    echo $((up - $1 / hz))
+}
+
+# --- 终止 (递归整棵树) ----------------------------------------------------
+kill_tree() {   # $1=pid $2=signal
+    local child
+    for child in $(pgrep -P "$1" 2>/dev/null); do
+        kill_tree "$child" "$2"
+    done
+    kill -"$2" "$1" 2>/dev/null
+}
+
+kill_pid() {   # $1=pid $2=原因
+    local pid="$1" reason="$2" cmd
+    cmd=$(cat -- "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' | cut -c1-90)
+    if [ "$DRY_RUN" = "1" ]; then
+        log "DRY 会终止 PID=$pid ($reason): $cmd"
+        return 0
+    fi
+    kill_tree "$pid" TERM
+    for _ in 1 2 3 4; do          # 最多等 2s 让它自己退出
+        kill -0 "$pid" 2>/dev/null || { log "已终止 PID=$pid ($reason): $cmd"; return 0; }
+        sleep 0.5
+    done
+    kill_tree "$pid" KILL          # TERM 无效(常见于 D 状态卡死)则强杀
+    log "已强杀 PID=$pid ($reason): $cmd"
+}
+
+# --- 采集 ----------------------------------------------------------------
+# 输出 "rss pid role", 含主进程与 xdist worker
+collect_all() {
+    local pid rss role
+    for pid in /proc/[0-9]*; do
+        pid=${pid#/proc/}
+        [ "$pid" = "$$" ] && continue
+        role=$(role_of "$pid")
+        [ -n "$role" ] || continue
+        rss=$(awk '/^VmRSS:/{print int($2/1024)}' "/proc/$pid/status" 2>/dev/null) || continue
+        [ -n "$rss" ] && echo "$rss $pid $role"
+    done
+}
+
+mapfile -t ALL < <(collect_all | sort -rn)
+
+# ① 单进程超限 (主进程与 worker 同等对待)
+for entry in "${ALL[@]}"; do
+    rss=${entry%% *}; rest=${entry#* }; pid=${rest%% *}; role=${rest##* }
+    [ "$rss" -gt "$MAX_RSS_MB" ] && kill_pid "$pid" "RSS=${rss}MB 超过 ${MAX_RSS_MB}MB (${role})"
+done
+
+# ② 并发数超限 (只数主进程; worker 是主进程的子进程, 数进来会误杀)
+MASTERS=()
+for entry in "${ALL[@]}"; do
+    rest=${entry#* }; pid=${rest%% *}; role=${rest##* }
+    [ "$role" = "master" ] && MASTERS+=("$entry")
+done
+COUNT=${#MASTERS[@]}
+if [ "$COUNT" -gt "$MAX_CONCURRENT" ]; then
+    log "并行测试 ${COUNT} 个超过上限 ${MAX_CONCURRENT}, 开始收敛"
+    for entry in "${MASTERS[@]}"; do
+        [ "$COUNT" -le "$MAX_CONCURRENT" ] && break
+        rss=${entry%% *}; rest=${entry#* }; pid=${rest%% *}
+        kill_pid "$pid" "并行数收敛(${COUNT}→${MAX_CONCURRENT}), RSS=${rss}MB"
+        COUNT=$((COUNT - 1))
+    done
+fi
+# ③ 孤儿测试进程回收 (2026-10-04 新增): PPID=1 说明父进程已死,
+#    退出码和输出都没有人再回收, 却还在占 CPU/写磁盘 —— 一律终止。
+for pid_path in /proc/[0-9]*; do
+    pid=${pid_path#/proc/}
+    [ "$pid" = "$$" ] && continue
+    role=$(role_of "$pid")
+    [ -n "$role" ] || continue
+    read -r ppid start < <(read_proc_stat "$pid") || continue
+    [ "$ppid" = "1" ] || continue
+    age=$(proc_age "$start")
+    if [ "$age" -ge "$ORPHAN_GRACE_SEC" ]; then
+        kill_pid "$pid" "孤儿测试进程 (PPID=1, 已运行 ${age}s > ${ORPHAN_GRACE_SEC}s, ${role})"
+    else
+        log "发现孤儿测试进程 PID=$pid (${role}, 已运行 ${age}s < ${ORPHAN_GRACE_SEC}s), 暂缓"
+    fi
+done
+
+# 干跑汇总: 便于人工验证"护栏确实看得见这些进程", 生产运行不输出
+[ "$DRY_RUN" = "1" ] && log "DRY-RUN 汇总: 采集测试进程 ${#ALL[@]} 个 (其中 master ${#MASTERS[@]} 个)"
+
+exit 0

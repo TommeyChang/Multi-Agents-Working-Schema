@@ -1,0 +1,12 @@
+[Unit]
+Description=qcta /tmp pytest 临时目录回收 (每 10 分钟)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+AccuracySec=30s
+# 刻意不使用 Persistent=true: 2026-10-03 曾因 Persistent 在重启后立刻补跑
+# 三个批处理任务, 把机器一起压垮。清理类任务没有"补跑"的必要。
+
+[Install]
+WantedBy=timers.target

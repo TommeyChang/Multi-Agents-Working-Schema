@@ -1,0 +1,7 @@
+[Unit]
+Description=qcta test guard (限制 pytest 并发数 + 单进程内存)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/qcta-test-guard
+Environment=HOME=/root

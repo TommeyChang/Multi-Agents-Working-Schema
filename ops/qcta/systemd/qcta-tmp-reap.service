@@ -1,0 +1,14 @@
+[Unit]
+Description=qcta /tmp pytest 临时目录回收 (清理 PID 已死的 /tmp/pytest-<PID>)
+Documentation=man:systemd.service(5)
+# 背景: 2026-10-04 磁盘 1.5h 内 73G→136G, 元凶是孤儿 xdist worker 刷盘,
+# 且 /tmp 下累积了 10674 个从未清理的 pytest 临时目录。
+# 本单元负责"进程被杀之后的收尸", 与 qcta-test-guard(管进程) 互补。
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+IOSchedulingPriority=7
+# 删除上万个目录时不与前台服务抢 I/O
+ExecStart=/usr/local/bin/qcta-tmp-reap

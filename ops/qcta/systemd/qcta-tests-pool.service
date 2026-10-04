@@ -1,0 +1,40 @@
+[Unit]
+Description=qcta 测试进程池 (承接 dsh-web 派生的命令, 独立内存配额)
+Documentation=man:systemd.resource-control(5)
+
+# 背景（为什么需要这个池）:
+#   DSH 的 bash 工具在 dsh-bash-local 里硬编码 `bash -c <command>`,
+#   插件配置只暴露 cwd/timeoutMs/maxOutputBytes 等, 没有任何 cgroup / slice /
+#   systemd 相关开关(已核对 0.1.5-rc.1 全部 @deepseek-ai 包, 无一处出现 "cgroup")。
+#   于是 agent 派生的一切命令(测试/脚本/审计)都留在 dsh-web.service 自己的
+#   cgroup 里, 与 dsh 本体争抢同一个 MemoryMax=5G。
+#
+#   2026-10-04 实测: dsh-web cgroup 4298MB, 其中 node 本身 2997MB、
+#   另一个会话的 pytest 约 1.2GB; memory.events high 累计 50 万次(限流中)。
+#   测试一旦膨胀, 被压的首先是 dsh —— 结构性地拿 dsh 的寿命做抵押。
+#
+#   本单元提供一个独立配额的 cgroup, 由 qcta-tests-adopt 把 dsh-web 的
+#   子进程陆续搬进来, 使 dsh-web 的 cgroup 重新只包含 dsh 自己。
+#
+# 配额取值依据:
+#   · 正常分组测试约 150~250MB/进程, 护栏限 4 并发 ⇒ 峰值约 1GB;
+#   · 2026-10-03 事故里单个 pytest 涨到 3.4G 常驻 + 7.2G swap 拖垮整机,
+#     所以上限要卡在"单个失控进程就会被 OOM 干掉, 而不是拖垮整机"的位置;
+#   · MemoryHigh=2G 先限流(减速而非杀死), MemoryMax=3G 才是硬墙。
+#   sleep infinity 只是占位进程, 用来持有这个 cgroup 并让 systemd 常驻管理它;
+#   若它被 OOM 杀掉, Restart=always 会重建 → 池内被搬进来的进程随之清空。
+
+[Service]
+Type=simple
+ExecStart=/bin/sleep infinity
+Restart=always
+RestartSec=2
+MemoryHigh=2G
+MemoryMax=3G
+MemorySwapMax=1G
+OOMPolicy=continue
+# 注意: Nice= 只作用于占位进程 sleep, 对搬进来的进程无效(进程的 nice 在 exec 时
+# 由各自的父进程决定, 搬 cgroup 不会改变它)。
+
+[Install]
+WantedBy=multi-user.target

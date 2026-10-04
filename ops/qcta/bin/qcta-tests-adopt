@@ -1,0 +1,64 @@
+#!/bin/bash
+# qcta-tests-adopt —— 把 dsh-web 派生的命令搬进独立 cgroup (2026-10-04 建立)
+#
+# 背景:
+#   DSH 的 bash 工具硬编码 `bash -c`, 不支持指定 cgroup(全包核对无 cgroup 支持),
+#   所以 agent 派生的一切命令都落在 dsh-web.service 自己的 cgroup 里, 与 dsh
+#   本体共享 MemoryMax=5G。2026-10-04 实测 dsh-web cgroup 4298MB, 其中测试占
+#   约 1.2GB, 限流事件 50 万次 —— 测试在结构性地挤压 dsh。
+#
+# 做法:
+#   每 INTERVAL 秒把 /sys/fs/cgroup/system.slice/dsh-web.service/cgroup.procs 里
+#   除 dsh 本体外的进程, 写入 qcta-tests-pool.service 的 cgroup.procs。
+#   cgroup v2 的归属在 fork 时继承, 所以只要搬走父进程, 它后续派生的子进程
+#   (pytest-xdist worker、uv、timeout 等) 会自动落在池里, 不需要逐个搬。
+#
+# 为什么不搬 dsh 本体(两道保险):
+#   ① 与 systemd 报的 MainPID 比对, 每 5 秒刷新一次(应对 dsh 重启后 PID 变化);
+#   ② 额外跳过 comm=="node" 的进程 —— 即使刷新窗口内 PID 变了, 也绝不会把
+#      dsh 自己搬进池子。搬错的后果很严重: dsh 会被 3G 配额限制, 而且
+#      dsh-web.service 的 cgroup 会瞬间变空, systemd 会认为该服务已停止。
+#
+# 副作用(已知并接受):
+#   进程搬出后不再受 dsh-web.service 的 KillMode=control-group 管辖, dsh 重启
+#   时不会被连带杀掉。由两处兜底: dsh-web 的 40-detach-children.conf 在停止
+#   时清空池子; qcta-test-guard 的孤儿规则回收 PPID=1 的测试进程。
+set -uo pipefail
+
+SRC=/sys/fs/cgroup/system.slice/dsh-web.service
+DST=/sys/fs/cgroup/system.slice/qcta-tests-pool.service
+INTERVAL="${INTERVAL:-1}"
+MAINPID_REFRESH="${MAINPID_REFRESH:-5}"
+
+log() { echo "[tests-adopt] $*"; }
+
+mainpid=""
+tick=0
+
+log "启动: $SRC -> $DST (间隔 ${INTERVAL}s)"
+
+while :; do
+    if [ $((tick % MAINPID_REFRESH)) -eq 0 ]; then
+        mainpid=$(systemctl show dsh-web -p MainPID --value 2>/dev/null)
+    fi
+    tick=$((tick + 1))
+
+    if [ ! -w "$DST/cgroup.procs" ]; then
+        log "目标 cgroup 不可写, 等待: $DST"
+        sleep "$INTERVAL"
+        continue
+    fi
+
+    moved=0
+    while read -r pid; do
+        [ -n "$pid" ] || continue
+        [ "$pid" = "$mainpid" ] && continue
+        [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "node" ] && continue
+        if echo "$pid" > "$DST/cgroup.procs" 2>/dev/null; then
+            moved=$((moved + 1))
+        fi
+    done < "$SRC/cgroup.procs"
+
+    [ "$moved" -gt 0 ] && log "搬走 $moved 个进程 -> 测试池"
+    sleep "$INTERVAL"
+done

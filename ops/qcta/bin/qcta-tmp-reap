@@ -1,0 +1,78 @@
+#!/bin/bash
+# qcta-tmp-reap —— /tmp 下 pytest 临时目录回收 (2026-10-04 建立)
+#
+# 背景（为什么需要）:
+#   2026-10-04 20:26 发现磁盘 1.5 小时内从 73G 涨到 136G (39%→73%), 只剩 53G。
+#   直接原因是两个孤儿 pytest-xdist worker 失控刷盘(累计 40.0GB + 32.0GB),
+#   但同一时期 /tmp 下也累积了 10674 个 pytest 临时目录 —— 这些目录从来不清理,
+#   只要测试在跑就单调增长。qcta-test-guard 管的是"进程", 管不了"残留文件",
+#   本脚本补上这一半: 进程被杀掉之后, 它留下的临时目录也要有人收尸。
+#
+# 判据（为什么这样判断是安全的）:
+#   pytest 的 basetemp 目录名就是创建它的那个 pytest 主进程 PID:
+#       /tmp/pytest-<PID>
+#   所以只需要判断该 PID 是否还活着:
+#     · PID 存活 → 这次测试还在跑, 保留
+#     · PID 已死 → 这次运行早已结束(输出也早被读走), 目录是纯垃圾, 回收
+#   刻意不用 mtime 判断: 目录自身的 mtime 不随内部文件写入而更新,
+#   一个仍在写日志的活跃目录可能看起来很旧, 会误删。
+#   也刻意不用 du 遍历估算体积: 上万个目录会让 du 跑几分钟(实测 >180s),
+#   在负载高的机器上本身就是负担。释放量用 df 前后差值衡量即可。
+#
+# 保护: 
+#   · 仅处理 /tmp/pytest-<纯数字> 形式, 其它一律不碰;
+#   · /tmp/pytest-of-root 是 pytest 的 basetemp 根目录, 固定跳过;
+#   · 额外要求目录 mtime 已超过 MIN_AGE_SEC, 防止 PID 复用导致的误判。
+#
+# 用法: qcta-tmp-reap [--dry-run]      配置: /etc/default/qcta-tmp-reap
+# 由 qcta-tmp-reap.timer 每 10 分钟调用一次。
+set -uo pipefail
+
+DRY=0
+[ "${1:-}" = "--dry-run" ] && DRY=1
+
+MIN_AGE_SEC=1800        # 目录 mtime 至少这么旧才考虑回收 (防 PID 复用误判)
+MAX_DELETE=0            # 0 = 不限制; 设正数可限制单次删除量, 削平 I/O 峰值
+TMP_ROOT=/tmp
+# shellcheck disable=SC1091
+[ -r /etc/default/qcta-tmp-reap ] && . /etc/default/qcta-tmp-reap
+
+log() { echo "[tmp-reap] $*"; }
+
+NOW=$(date +%s)
+kept=0; gone=0; deleted=0; too_new=0
+
+for dir in "$TMP_ROOT"/pytest-*; do
+    [ -d "$dir" ] || continue
+    base=${dir##*/}                       # pytest-2241546
+    [ "$base" = "pytest-of-root" ] && { kept=$((kept + 1)); continue; }
+    num=${base#pytest-}
+    case "$num" in '' | *[!0-9]*) kept=$((kept + 1)); continue ;; esac
+
+    if kill -0 "$num" 2>/dev/null; then    # 主进程还活着 → 测试在跑
+        kept=$((kept + 1)); continue
+    fi
+    gone=$((gone + 1))
+
+    m=$(stat -c %Y -- "$dir" 2>/dev/null) || { kept=$((kept + 1)); continue; }
+    if [ $((NOW - m)) -lt "$MIN_AGE_SEC" ]; then
+        too_new=$((too_new + 1)); continue
+    fi
+    if [ "$MAX_DELETE" -gt 0 ] && [ "$deleted" -ge "$MAX_DELETE" ]; then
+        log "已达单次删除上限 $MAX_DELETE, 本轮停止"; break
+    fi
+
+    if [ "$DRY" -eq 1 ]; then
+        log "DRY 会删除 $dir (PID $num 已死)"
+    else
+        rm -rf --one-file-system -- "$dir" 2>/dev/null && deleted=$((deleted + 1))
+        [ $((deleted % 500)) -eq 0 ] && log "已删除 $deleted 个..."
+    fi
+done
+
+if [ "$DRY" -eq 1 ]; then
+    log "DRY-RUN: 存活保留=$kept 判定可回收=$gone 因太新跳过=$too_new"
+else
+    log "完成: 存活保留=$kept PID已死=$gone 已删除=$deleted 因太新跳过=$too_new"
+fi
+exit 0

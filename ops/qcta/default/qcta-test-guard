@@ -1,0 +1,11 @@
+# qcta-test-guard 阈值 (2026-10-03)
+# 单进程 RSS 上限(MB): 正常分组测试 150~250MB, 2048 只命中失控进程
+MAX_RSS_MB=2048
+# 并行 pytest 进程数上限: 本机 4 核, 超过会抢光 CPU 并拖垮 bg/dsh 的事件循环
+MAX_CONCURRENT=4
+
+# 2026-10-04 加固新增: 孤儿测试进程宽限期(秒)。
+# PPID=1(父进程已死, 退出码/输出已无人回收)且运行超过该秒数的 pytest 主进程
+# 或 xdist worker 会被终止。取 900s 是为了给"故意 nohup 后台跑测试"留余量;
+# 磁盘风险由 qcta-tmp-reap.timer(每 10 分钟)兜底。
+ORPHAN_GRACE_SEC=900

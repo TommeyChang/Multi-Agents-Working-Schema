@@ -1,0 +1,19 @@
+[Unit]
+Description=把 dsh-web 派生的命令搬进独立 cgroup (qcta 测试池)
+Documentation=man:systemd.service(5)
+# 由 qcta-tests-adopt 每秒把 dsh-web.service cgroup 里除 dsh 本体外的进程
+# 搬进 qcta-tests-pool.service, 使 dsh 的内存配额只服务于 dsh 自己。
+Requires=qcta-tests-pool.service
+After=qcta-tests-pool.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/qcta-tests-adopt
+Restart=always
+RestartSec=5
+# 搬运是纯记账操作, 不抢 CPU
+Nice=19
+MemoryMax=32M
+
+[Install]
+WantedBy=multi-user.target

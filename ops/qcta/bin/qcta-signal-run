@@ -1,0 +1,6 @@
+#!/bin/bash
+# usage: qcta-signal-run SYMBOL-EXCHANGE [extra flags e.g. --execute]
+set -e
+SYM="${1%%-*}"; EXCH="${1##*-}"; shift
+cd /root/quant-cta
+exec .venv/bin/python scripts/services/sim_signal.py --symbol "$SYM" --exchange "$EXCH" --strategy ma_cross --live "$@" --warmup 65

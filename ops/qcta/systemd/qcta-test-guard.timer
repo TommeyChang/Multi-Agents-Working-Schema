@@ -1,0 +1,10 @@
+[Unit]
+Description=qcta test guard timer (30s 节拍)
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

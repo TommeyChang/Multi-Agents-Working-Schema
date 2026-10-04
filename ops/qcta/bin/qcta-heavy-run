@@ -1,0 +1,34 @@
+#!/bin/bash
+# qcta 重型批处理串行闸门 —— 2026-10-02 建立
+#
+# 目的:
+#   回填 / 全量同步 / 备份 / 日报等重型作业共用同一把文件锁, 保证同一时刻只有一个在跑,
+#   避免内存与 I/O 互相争抢 (历史上多个重型作业并发 + ClickHouse 曾把 7.4G 内存打满,
+#   导致整机 swap 抖动直至假死, 见 2026-09-22 事故)。
+#
+# 用法:
+#   systemd 单元:  ExecStart=/usr/local/bin/qcta-heavy-run <原命令...>
+#   手工回填:      qcta-heavy-run .venv/bin/python scripts/ops/backfill_receipts_rank.py --start 2018-01-01
+#
+# 锁:      /run/lock/qcta-heavy.lock  (tmpfs, 重启自动清空, 不会残留死锁)
+# 等待:    默认最多 4 小时 (环境变量 QA_HEAVY_LOCK_WAIT 可覆盖, 单位秒);
+#          等不到锁以退出码 75 结束 —— 明确失败, 不会静默跳过作业。
+# 优先级:  nice 10 + ionice best-effort 7, 让交互服务与行情采集优先拿到 CPU/IO。
+#
+# 涉及的定时作业 (均为凌晨批处理窗口, 串行执行):
+#   02:00 qcta-backup        备份
+#   02:30 qcta-daily-report  日终质检日报
+#   03:00 qcta-ch-full-sync  ClickHouse 全量重建回填
+set -uo pipefail
+
+LOCK=/run/lock/qcta-heavy.lock
+WAIT="${QA_HEAVY_LOCK_WAIT:-14400}"
+
+if [ "$#" -eq 0 ]; then
+    echo "用法: qcta-heavy-run <command...>" >&2
+    exit 64
+fi
+
+exec /usr/bin/flock -w "$WAIT" -E 75 "$LOCK" \
+     /usr/bin/ionice -c2 -n7 \
+     /usr/bin/nice -n 10 "$@"
