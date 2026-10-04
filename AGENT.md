@@ -37,9 +37,10 @@ Multi-Agents-Working-Schema/          # 一个体系一个一级目录
 │   ├── WORKSPACE.md               #     工作区：worktree、分支、合并、回收
 │   ├── SUBAGENT.md                #     子代理：派单、职能、扇出、额度、空转
 │   └── RISKS.md                   #     本体系自身的风险与处置边界
-├── agents/                        #   角色：一角色一文件，统一骨架
+├── agents/                        #   角色：一角色一文件（**与工程无关的机制**）
 │   ├── commander.md   po.md   pm.md   tech-lead.md
 │   └── dev.md   ops.md   dba.md
+├── bindings/                      #   工程绑定：线别／工作面／门禁／资产／窗口（**逐工程可换**）
 ├── ref/                           #   只读参考件：从别处取样的原件，改东西时对样子用
 │   ├── README.md                  #     出处（源提交／树对象／逐文件哈希）＋ 取样纪律
 │   ├── todo/                      #     主检出 todo/**（协调器渲染产物）的取样

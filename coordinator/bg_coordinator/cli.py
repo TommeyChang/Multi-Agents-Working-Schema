@@ -428,6 +428,34 @@ def cmd_raise(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_bind(args: argparse.Namespace) -> int:
+    """工程绑定状态——**当前工程的落点声明齐不齐**。
+
+    读，不写：绑定是工程的声明，协调器只解析与校验。
+    缺项**报出来**（退出码 1），不替工程猜默认值——猜出来的默认值就是静默失真。
+    """
+    from .binding import describe
+    from .schema import BINDING_FIELDS
+
+    repo = _store(args).repo
+    info = describe(repo, BINDING_FIELDS)
+    if args.json:
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+    else:
+        print(f"工程绑定｜{info['project'] or '（未指定目标仓）'}｜{info['source']}")
+        if info["path"]:
+            print(f"  文件    {info['path']}")
+        print(f"  状态    {info['status']}")
+        for gap in info["gaps"]:
+            print(f"  GAP     {gap}")
+        for code, workface in sorted(info["lines"].items()):
+            print(f"  线 {code:<5} {'、'.join(workface or []) or '—'}")
+        if info["status"] != "完整":
+            print()
+            print("  补齐后体系侧一个字都不用动——**落点归工程**。")
+    return 0 if info["status"] == "完整" else 1
+
+
 def cmd_maws(args: argparse.Namespace) -> int:
     """打印 MAWS —— Multi-Agents Working Schema，**并与实现对账**。
 
@@ -1062,6 +1090,9 @@ def build_parser() -> argparse.ArgumentParser:
     s_raise.add_argument("--acceptance", nargs="*", default=[])
     s_raise.add_argument("--request-id", default="")
     s_raise.set_defaults(func=cmd_raise)
+
+    s_bind = sub.add_parser("bind", help="工程绑定状态（读：来源／缺口／各线工作面）")
+    s_bind.set_defaults(func=cmd_bind)
 
     sub.add_parser("maws", help="打印 MAWS 并对账（Schema ↔ 实现）").set_defaults(func=cmd_maws)
 

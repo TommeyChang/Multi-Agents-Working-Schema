@@ -177,6 +177,22 @@ ROLES: tuple[RoleSpec, ...] = (
 # ---------------------------------------------------------------------------
 
 
+#: **工程绑定的必需字段**——单一权威。`binding.py` 只按这份清单校验，不另立一份。
+#:
+#: 体系管机制、工程管落点：**换一个工程还成立**的写进 `agents/`／`rules/`；
+#: 换一个工程就不成立的（线别、工作面、门禁、资产名、窗口段序）写进绑定。
+BINDING_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("project", "str", "工程名（与目标仓目录同名）"),
+    ("version", "int", "绑定格式版本"),
+    ("lines", "dict", "线别 → {name, workface[]}：本工程有哪几条线、各线工作面"),
+    ("gate", "dict", "门禁：入口／快跑标记／域映射／共享面／静态腿／发布口径／真库并发纪律"),
+    ("migrations", "dict", "迁移目录、工具、命名、已知坑"),
+    ("protected_assets", "list", "受保护资产（回收器永不触碰）"),
+    ("scratch_namespace", "str", "scratch 命名空间前缀"),
+    ("window", "list", "部署窗口段序"),
+    ("shared_files", "list", "共享面（改动须串行或单点改）"),
+)
+
 #: 只读动词：不改状态，因此**不需要角色闸**（谁都能查）。
 READ_VERBS: tuple[str, ...] = (
     "ready",
@@ -191,6 +207,7 @@ READ_VERBS: tuple[str, ...] = (
     "leases",
     "quota",
     "verify-state",
+    "bind",
 )
 
 #: 资源动词：不经状态机，走租约自己的生命周期。
@@ -350,6 +367,14 @@ def reconcile() -> SchemaReport:
         if r.form == "subagent" and r.can_dispatch:
             drifts.append(Drift("subagent-dispatch", f"{r.key} 是子代理却声明了派单权"))
 
+    # ⑤ **体系侧登记的绑定必须自洽**——登记了就要能解析、字段齐、不空值。
+    #    绑定坏掉不该等到某个工程派单时才炸。
+    from .binding import scan_registered
+
+    for rec in scan_registered(BINDING_FIELDS):
+        for gap in rec["gaps"]:
+            drifts.append(Drift("binding-incomplete", f"bindings/{rec['file']}：{gap}"))
+
     # ④ 决策类别必须都有人接
     for cat, owner in CATEGORY_OWNER.items():
         owner = canonical_role(owner)
@@ -436,6 +461,11 @@ def render_schema() -> str:
         shape = "独立会话" if r.form == "independent" else "子代理"
         disp = "、".join(r.dispatch) if r.dispatch else "—"
         lines.append(f"  {r.key:<10} {shape:<6} 归 {r.reports_to:<9} 派 {disp:<5} {r.brief}")
+
+    lines.append("")
+    lines.append("工程绑定（必需字段——体系管机制，工程管落点）")
+    for name, kind, desc in BINDING_FIELDS:
+        lines.append(f"  {name:<18} {kind:<5} {desc}")
 
     lines.append("")
     lines.append("动词")
