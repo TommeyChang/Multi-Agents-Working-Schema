@@ -207,6 +207,37 @@ def test_role_docs_carry_no_project_specific_paths() -> None:
     assert not offenders, "角色文件里出现工程专属落点（应移入 bindings/）：\n  " + "\n  ".join(offenders)
 
 
+#: 规范面的**全体**（AGENT ＋ rules ＋ agents）都不许出现这些——它们是某一工程或某一工作区的落点
+_NORMATIVE_TOKENS = (
+    "/root/",  # 工作区绝对路径
+    "uv run",  # 某工程的工具链
+    "alembic",  # 某工程的迁移工具
+    "broker_gateway",
+    "data_access/",
+    "auth/",
+    "notification/",
+    "18080",  # 某工程的端口
+)
+
+
+def test_normative_surface_carries_no_project_or_workspace_landing() -> None:
+    """**规范面只写「换一个工程还成立」的东西**——工作区路径、工具链、迁移工具、
+    域路径、端口，一律属于绑定。
+
+    这条闸防的是同一类失败反复发生：工程细节长回体系侧，而它**错得不像错的**
+    （看起来像规则，实际是某一工程的巧合）。本轮陆续收掉了 agents/ 的七处、
+    rules/WORKSPACE.md 的六处、COORDINATION 与 SUBAGENT 各一处——所以钉住。
+    """
+    surfaces = [MAWS / "AGENT.md", *(MAWS / "rules").glob("*.md"), *(MAWS / "agents").glob("*.md")]
+    offenders: list[str] = []
+    for path in sorted(surfaces):
+        text = path.read_text(encoding="utf-8")
+        for token in _NORMATIVE_TOKENS:
+            if token in text:
+                offenders.append(f"{path.name}: {token}")
+    assert not offenders, "规范面出现工程/工作区落点（应移入 bindings/）：\n  " + "\n  ".join(offenders)
+
+
 def test_rules_point_at_binding_for_per_project_lists() -> None:
     """规则里凡"逐工程不同"的清单，必须**指向绑定**而不是自己列。"""
     for name in ("SUBAGENT.md", "WORKSPACE.md"):

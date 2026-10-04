@@ -7,12 +7,16 @@
 
 ## 一、目录布局
 
+> 下面是**本工作区当前**的样子：`<产品仓>` 就是 `futures-broker-gateway/`，
+> `<体系仓>` 就是 `Multi-Agents-Working-Schema/`。**换工程时只换产品仓那一个名字**——
+> 其余结构（工作区根／worktrees／体系仓）不变。
+
 ```
-futures-broker-gateway-workspace/          # 工作区根（不入库）
-├── futures-broker-gateway/                # 【产品仓】主检出 —— 永远停在主干
+<工作区根>/                                # 工作区根（不入库）
+├── <产品仓>/                              # 【产品仓】主检出 —— 永远停在主干
 │   ├── todo/                              #   视图（协调器渲染产物，只读语义）
 │   └── reports/                           #   人读报告（渲染产物）
-├── Multi-Agents-Working-Schema/           # 【体系仓】MAWS 自己：独立 git 仓 ＋ 自己的 origin
+├── <体系仓>/                              # 【体系仓】MAWS 自己：独立 git 仓 ＋ 自己的 origin
 │   ├── README.md                          #   仓首页
 │   ├── AGENT.md                           #   入口：读什么、谁是谁、开局三步
 │   ├── rules/                             #   跨角色规则
@@ -20,7 +24,8 @@ futures-broker-gateway-workspace/          # 工作区根（不入库）
 │   │   ├── WORKSPACE.md                   #     本文件
 │   │   ├── SUBAGENT.md                    #     子代理：派单、职能、扇出、额度
 │   │   └── RISKS.md                       #     本体系自身的风险
-│   ├── agents/                            #   角色：一角色一文件，统一骨架
+│   ├── agents/                            #   角色：一角色一文件（**与工程无关的机制**）
+│   ├── bindings/                          #   工程绑定：线别／工作面／门禁／资产／窗口
 │   ├── ref/                               #   只读取样（**不入库**）
 │   ├── .state/ · .evidence/               #   运行时：状态根／门禁证据（**不入库**）
 │   └── coordinator/                       #   协调器：实现 ＋ 测试 ＋ 工具
@@ -34,7 +39,7 @@ futures-broker-gateway-workspace/          # 工作区根（不入库）
 
 | | 产品仓 | 体系仓 |
 |---|---|---|
-| 在哪 | `futures-broker-gateway/` | `Multi-Agents-Working-Schema/` |
+| 在哪 | `<产品仓>/`（本工作区即 `futures-broker-gateway/`） | `<体系仓>/`（即本目录） |
 | 装什么 | 业务代码、测试、迁移件、看板渲染产物 | 本体系的规则、协调器、工具 |
 | 主检出 | 永远停在主干（对账／合并／推送） | 永远停在主干（同左） |
 | 门禁 | `tools/gate.py`（默认目标仓就是它） | `python3 -m pytest` ＋ `ruff` ＋ `tools/smoke.sh` |
@@ -58,13 +63,13 @@ futures-broker-gateway-workspace/          # 工作区根（不入库）
 ## 二、开工
 
 ```bash
-# 改【产品仓】——日常任务走这条
-cd /root/futures-broker-gateway-workspace/futures-broker-gateway
+# 改【产品仓】——日常任务走这条（<产品仓主检出> 见本文件 §一）
+cd <工作区根>/<产品仓主检出>
 git worktree add ../worktrees/<role>-<topic> -b <role>/<条目号>-<slug> main
 cd ../worktrees/<role>-<topic>
 
 # 改【体系仓】——改规则／协调器／工具走这条（同样不许在主检出改）
-cd /root/futures-broker-gateway-workspace/Multi-Agents-Working-Schema
+cd <工作区根>/<体系仓主检出>
 git worktree add ../worktrees/maws-<role>-<topic> -b <role>/maws-<slug> main
 cd ../worktrees/maws-<role>-<topic>
 ```
@@ -110,8 +115,8 @@ cd ../worktrees/maws-<role>-<topic>
 
 ```
 条目生命周期：
-  计划 → 分支 → 开发 → [DBA 评审]（条件段：带迁移条目才走）
-       → 合入主干 → [OPS 部署]（推送 → 部署根重铺 → 迁移窗口 → 起服验证留痕）
+  计划 → 分支 → 开发 → [DBA 评审]（条件段：带迁移件才走）
+       → 合入主干 → [OPS 部署]（段序见绑定 §部署窗口段序）
 ```
 
 **合入一律「私有 worktree 组树 → 主线快进」**：
@@ -120,12 +125,11 @@ cd ../worktrees/maws-<role>-<topic>
 # ① 在【私有 worktree】里组装合并提交（保留任务边界，便于追溯）
 git merge --no-ff <任务分支>
 
-# ② 回主检出，只做快进
-cd /root/futures-broker-gateway-workspace/futures-broker-gateway
+# ② 回【该仓自己的主检出】，只做快进
+cd <工作区根>/<该仓主检出>
 git merge --ff-only <组好的合并提交>
 
-# ③ 合并后重跑门禁
-uv run pytest && uv run ruff check
+# ③ 合并后重跑门禁（命令按仓而定，见绑定 §门禁／本文件 §五）
 ```
 
 **两个仓同一个协议**：上述命令在**该分支所属的仓**里执行。
@@ -173,9 +177,10 @@ uv run pytest && uv run ruff check
 > **发布前仍须全量**（`tools/gate.py --scope full`）。**收窄必须报口径**（命令＋用例数）；
 > 静默少跑等于把漏测藏起来。详见 `SUBAGENT.md` §五。
 
-**号段闸与合并提交**：号段闸对**合并提交**已正确建模——「早已存在」的基线一并计入合并对方的文本，
-簿记**跨分支可见**。故合并主干**不需要跳过钩子**。
-**若仍被号段闸拦，就是本次合并真正引入了未登记的号——去取号，不要绕过。**
+**取号闸与合并提交**：**号是资源**，合并提交不得绕过取号簿记——
+合并提交里「早已存在」的号一并计入合并对方的文本，簿记**跨分支可见**。
+工程侧若装了提交闸（清单见绑定 §门禁），它对合并提交已正确建模，**不需要跳过钩子**；
+**若仍被拦，就是本次合并真正引入了未登记的号——去取号，不要绕过。**
 
 ---
 
@@ -185,7 +190,7 @@ uv run pytest && uv run ruff check
 
 ```bash
 # 在**该 worktree 所属的仓**里执行（产品仓或体系仓，别搞混）
-cd /root/futures-broker-gateway-workspace/<该仓主检出>
+cd <工作区根>/<该仓主检出>
 git worktree remove ../worktrees/<worktree 目录名>
 git branch -d <该分支名>
 ```
@@ -235,7 +240,8 @@ git worktree prune     # 目录被手工删除后清理登记（同样按仓）
 
 ## 九、迁移类条目专用闸
 
-含 `alembic/versions/**` 改动的分支，合入前跑单命令闸（**本体系自持**：静态读图与号，不连库）：
+含**迁移件**改动的分支（迁移目录与工具见绑定 §迁移），合入前跑单命令闸
+（**本体系自持**：静态读图与号，不连库）：
 
 ```bash
 python3 tools/migration_gate.py --base origin/main --root "$BG_COORDINATOR_ROOT"
@@ -254,12 +260,8 @@ python3 tools/migration_gate.py --base origin/main --root "$BG_COORDINATOR_ROOT"
 DDL 变更一律**新开下一 revision 补偿式承载**。
 
 **允许的例外**（不触 DDL 与数据串）：**docstring 与注释级更正**可做且鼓励——
-陈旧注记是误判源头。但必须随件携带**三项证据**：
+陈旧注记是误判源头。但必须随件携带**逐项一致的证据**（具体三项与算法见**绑定 §迁移**）。
 
-1. **AST（去 docstring）指纹改前等于改后**；
-2. **四键值**（`revision`／`down_revision`／`branch_labels`／`depends_on`）**逐项一致**；
-3. **离线产物**：本件区间段**逐字节一致**，全链**语句集合一致**（排序后比较）。
-
-> **全链逐字节不可作判据**：同一状态连渲两次离线 SQL，行数恒定但**逐字节差异非零**——
-> 索引经集合发射，迭代序随哈希种子变。判据用**排序后比较**；
-> 指纹算法可各自为政，判据是「各自前后相等」，不是跨方数值相等。
+> **判据口径是工程事实**：哪些字段算"键值"、离线产物怎么比（逐字节还是集合）、
+> 指纹怎么算——都取决于**那个工程的迁移工具**，故写在绑定里。
+> **跑法可以各自为政，判据是「各自前后相等」，不是跨方数值相等。**

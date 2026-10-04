@@ -175,7 +175,7 @@
 
 ```
 acceptance:
-  - type: test       cmd: "uv run pytest -q"      expect_exit: 0
+  - type: test       cmd: "<门禁命令>"             expect_exit: 0
   - type: negative   desc: "未注入仍 200 ⇒ 必红"
   - type: evidence   path: "worktrees/T-D-194.SUBMISSION.md"
 ```
@@ -197,7 +197,7 @@ acceptance:
 |---|---|
 | 形态 | `类型-线码-N`，**线内独立计数**（`T-D-194`／`R-ACL-67`／`OPS-162`） |
 | 发放 | **一律经协调器**，原子发放——**禁手工自选号** |
-| 迁移件 | revision 以主干 `alembic/versions` 最大号为基准自增 |
+| 迁移件 | revision 以主干**迁移目录**（见绑定 §迁移）当前最大号为基准自增 |
 
 **由此消失的一整类问题**：号段空洞、真脱同步、待回填——
 它们全是**并发写簿记**的产物，簿记被原子发号取代后不再存在。

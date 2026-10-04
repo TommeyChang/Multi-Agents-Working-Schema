@@ -41,7 +41,10 @@
   `broker_gateway/`→broker_gateway、`dfs/`→infra、`scripts/tools/`→infra；
 - **共享面**（改这些要跑全部域）：`main.py`、`settings.py`、`logging_config.py`、`pyproject.toml`、
   `alembic_metadata.py`；
-- **静态腿**（不触库的秒级闸，清单是工程数据）：见机读块。
+- **静态腿**（不触库的秒级闸，清单是工程数据）：见机读块；
+- **现状量级**（"域粒度为什么太粗"的依据，实测）：全仓 ≈4939 用例；
+  `broker_gateway` 一个域 ≈2774 例（**56%**）、`data_access` 785、`infra` 744、`auth` 476。
+  收窄测试范围（按影响面）的理由就来自这个量级。
 
 ## 四、迁移
 
