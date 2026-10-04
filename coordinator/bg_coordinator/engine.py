@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -18,6 +20,7 @@ from .models import (
     DEFAULT_DEV_LINES,
     AcceptanceItem,
     Actor,
+    Confirmation,
     DecisionCategory,
     Event,
     Evidence,
@@ -125,6 +128,13 @@ class State:
     #: 资源等待队列——配额满时**排队而不是硬拒**。
     #: 只放**可回收的等待意图**（持有者可死），不放代理身份（子代理生命周期太短，会变僵尸）。
     waiters: list[dict[str, Any]] = field(default_factory=list)
+    #: **用户确认**（按需求）：commander 发需求前必须先拿到它。
+    #:
+    #: 与租约不同，它**进事件面**（`replay` 逐条重建）：它是"用户要什么"的证据，
+    #: 不能像运行期状态那样"重建时从旧缓存里捞一把"——那正好会让证据悄悄失真。
+    confirmations: dict[str, Confirmation] = field(default_factory=dict)
+    #: 确认流水号（`C-<n>`）——号是资源，同一套口径
+    confirm_seq: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -139,6 +149,8 @@ class State:
             "role_claims": list(self.role_claims),
             "last_seq": self.last_seq,
             "waiters": list(self.waiters),
+            "confirmations": {k: v.to_dict() for k, v in self.confirmations.items()},
+            "confirm_seq": self.confirm_seq,
         }
 
     @staticmethod
@@ -155,6 +167,10 @@ class State:
             role_claims=list(d.get("role_claims", [])),
             last_seq=int(d.get("last_seq", d.get("seq", 0))),
             waiters=list(d.get("waiters", [])),
+            confirmations={
+                k: Confirmation.from_dict(v) for k, v in d.get("confirmations", {}).items()
+            },
+            confirm_seq=int(d.get("confirm_seq", 0)),
         )
 
 
@@ -632,10 +648,47 @@ def _do_register(
             ),
         )
 
+    # **用户显式确认**：commander 发需求必须先拿到用户的确认（R 才判）。
+    #
+    # 闸放在**发号之前**：号是资源——没经确认的需求不该占号，也不该进流程。
+    # 判据是 `models.Confirmation`：内容指纹相符、未消费、未过期；发号即消费。
+    # 为什么不能只写文档：commander 既是用户接口、又是需求的形式化者，
+    # 没有独立留痕时"用户要的"与"它认为用户要的"在状态里长得一模一样。
+    confirmed: Confirmation | None = None
+    kind_hint = p.kind or Kind.R
+    if kind_hint == Kind.R:
+        digest = need_digest(line_code, p.title)
+        now = time.time()
+        live = live_confirmations(new, digest=digest, now=now)
+        by_commander = actor.role == Role.COMMANDER or p.origin == Origin.COMMANDER
+        if by_commander and not live:
+            same_line = live_confirmations(new, line=line_code, now=now)
+            why = (
+                f"线 {line_code} 上有 {len(same_line)} 条在手确认，但**内容与本条不符**"
+                f"（最近一条：{same_line[0].id}「{same_line[0].title}」）"
+                if same_line
+                else f"线 {line_code} 上没有任何在手确认"
+            )
+            return _reject(
+                new, ts, verb, task_id, actor, expect_ver, rid,
+                Rejection(
+                    Code.E_NO_USER_CONFIRM,
+                    f"commander 发需求必须得到用户**显式确认**：{why}（本条指纹 {digest}）",
+                    id=task_id,
+                    owner=actor.name,
+                    hint=(
+                        "先问用户拿到原话；确认时标题必须与本条**逐字一致**："
+                        f'coord confirm --line {line_code} --title "{p.title}" '
+                        f'--role {actor.role}:{actor.name} --said "<用户原话>"'
+                    ),
+                ),
+            )
+        if live:
+            confirmed = live[0]
+
     # **编号由协调器分配**：调用方只声明线别与类型，不发号。
     # 发号与登记在**同一次持锁事务**内完成 ⇒ 撞号在结构上不可能。
     if not task_id:
-        kind_hint = p.kind or Kind.R
         family = family_of(kind_hint, line)
         # 先占号位，拿到 id 后回填对应物——**同一事务内完成，不留悬空号**
         n = alloc_number(new, family, ts=ts, holder=actor.name, kind=str(kind_hint.value))
@@ -657,9 +710,24 @@ def _do_register(
         priority=p.priority,
         ver=1,
     )
+    if confirmed is not None:
+        # **用完即销**：一条确认只够发一条需求（防"确认一次、发十条"）
+        confirmed.used_by = task_id
+        task.confirmed_by = confirmed.by
+        task.user_said = confirmed.said
     new.tasks[task_id] = task
     new.seq += 1
 
+    detail: dict[str, Any] = {"line": str(line), "kind": str(kind), "allocated": task_id}
+    if confirmed is not None:
+        # 事件面记下"消费了哪条确认"——`replay` 据此把那一条标成已销
+        detail.update(
+            {
+                "confirmation_used": confirmed.id,
+                "confirmed_by": confirmed.by,
+                "user_said": confirmed.said,
+            }
+        )
     ev = Event(
         seq=new.seq,
         ts=ts,
@@ -671,7 +739,7 @@ def _do_register(
         expect_ver=expect_ver,
         request_id=rid,
         result="ok",
-        detail={"line": str(line), "kind": str(kind), "allocated": task_id},
+        detail=detail,
         snapshot=_full_snapshot(task),
     )
     return Result(ok=True, state=new, event=ev, detail={"id": task_id})
@@ -1372,6 +1440,135 @@ def _actor_of(holder: str) -> Actor:
 
 #: 子代理授权的租约类别——**授权就是一条租约**：有 id、有持有者、有上限、有到期、要销账。
 SUBAGENT_KLASS = "subagent"
+
+#: 用户确认的默认有效期（12 小时）。
+#:
+#: 为什么**必须会过期**：确认是"用户此刻要什么"的证据，不是一张永久通行证——
+#: 上个月的"是"拿来发今天的需求，等于没有确认。
+CONFIRM_TTL_SECONDS = 12 * 3600.0
+
+
+def need_digest(line: str, title: str) -> str:
+    """需求的内容指纹：**线别 ＋ 标题**（归一化空白后）。
+
+    用它把"确认的那条"与"要发的那条"绑成同一件事——
+    确认了 A 却拿去发 B，是这条闸最容易漏的形态。
+    """
+    norm = " ".join(f"{line}::{title}".split())
+    return hashlib.sha1(norm.encode("utf-8")).hexdigest()[:12]
+
+
+def live_confirmations(state: State, *, digest: str = "", line: str = "", now: float = 0.0):
+    """在手（未消费、未过期）的确认；给了 `digest` 就只留内容相符的那些。"""
+    out = []
+    for c in state.confirmations.values():
+        if not c.live(now):
+            continue
+        if digest and c.digest != digest:
+            continue
+        if line and c.line != line:
+            continue
+        out.append(c)
+    return sorted(out, key=lambda c: c.id)
+
+
+def grant_confirm(
+    state: State,
+    *,
+    line: str,
+    title: str,
+    by: str,
+    said: str,
+    clock: float,
+    ttl: float = CONFIRM_TTL_SECONDS,
+    request_id: str = "",
+) -> Result:
+    """**记下用户的一次显式确认**（按需求）。
+
+    「commander 发需求必须得到用户显式确认」这句话，如果只写在文档里，
+    拦不住任何东西——commander 自己既是用户接口、又是需求的形式化者，
+    没有独立留痕时，"用户要的"和"它认为用户要的"在状态里长得一模一样。
+
+    所以这里把它变成一条可核的记录：**内容绑定、一次性、会过期、必须带用户原话**，
+    发号那一刻消费掉。见 `models.Confirmation`。
+    """
+    new = copy.deepcopy(state)
+    ts = now_iso()
+    rid = request_id or str(uuid.uuid4())
+    line_code = str(line).upper().strip()
+    title = " ".join((title or "").split())
+    said = (said or "").strip()
+
+    if not line_code or not title:
+        return _reject(
+            new, ts, "confirm", "", _actor_of(by), None, rid,
+            Rejection(
+                Code.E_INCOMPLETE,
+                "confirm 必须给 --line 与 --title（确认绑定的是**那一条**需求）",
+                owner=by,
+                hint="确认的是内容，不是「我同意了」这句话本身——标题要与 register 逐字一致",
+            ),
+        )
+    if not said:
+        return _reject(
+            new, ts, "confirm", "", _actor_of(by), None, rid,
+            Rejection(
+                Code.E_NO_USER_SAID,
+                "confirm 必须带 --said（**用户原话**）——它是这条记录唯一的证据面",
+                owner=by,
+                hint=(
+                    '例：coord confirm --line D --title "接入 X" '
+                    '--role commander:cmdr --said "把 X 接进来，先做只读"'
+                ),
+            ),
+        )
+
+    digest = need_digest(line_code, title)
+    dup = live_confirmations(new, digest=digest, now=clock)
+    if dup:
+        return _reject(
+            new, ts, "confirm", "", _actor_of(by), None, rid,
+            Rejection(
+                Code.E_CONFIRM_INVALID,
+                f"这一条已经有在手确认 {dup[0].id}（未消费、未过期）——不必重复确认",
+                owner=by,
+                hint=f"直接 register 即可（发号时消费 {dup[0].id}）",
+            ),
+        )
+
+    new.confirm_seq += 1
+    conf = Confirmation(
+        id=f"C-{new.confirm_seq}",
+        line=line_code,
+        title=title,
+        digest=digest,
+        by=by,
+        said=said,
+        ts=ts,
+        expires_at=clock + ttl,
+    )
+    new.confirmations[conf.id] = conf
+    new.seq += 1
+    ev = Event(
+        seq=new.seq,
+        ts=ts,
+        verb="confirm",
+        id=conf.id,
+        actor=by,
+        before={},
+        after=conf.to_dict(),
+        expect_ver=None,
+        request_id=rid,
+        result="ok",
+        detail={"confirmation": conf.to_dict()},
+    )
+    return Result(
+        ok=True,
+        state=new,
+        event=ev,
+        detail={"id": conf.id, "digest": digest, "title": title, "expires_at": conf.expires_at},
+    )
+
 
 
 def active_grants(state: State, holder: str = "") -> list[Lease]:

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .engine import State, pid_alive
 from .errors import Code
-from .models import Event, LeaseState, Task, TaskState
+from .models import Event, Kind, LeaseState, Origin, Task, TaskState
 from .validators import deps_all_terminal, deps_missing, rule_8b_evidence_readable, whitelist_covers
 
 # ---------------------------------------------------------------------------
@@ -453,6 +453,28 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
                     hint="先领凭证：coord dispatch --role <派单方> --task <条目号>",
                 )
             )
+
+    # 11.9 **commander 的需求没有用户确认留痕**——闸只管"新发的"，这条管"存量的"。
+    #
+    #      闸在 register 那一刻拦；但确认是**独立一次动作**，所以还要能回答
+    #      "手上这些需求里，哪些其实没有用户点头"——存量、旁路、以及
+    #      闸上线之前登记的条目，都只能靠这条审计看见。
+    for t in sorted(state.tasks.values(), key=lambda x: x.id):
+        if t.kind != Kind.R or t.origin != Origin.COMMANDER.value or t.confirmed_by:
+            continue
+        out.append(
+            Anomaly(
+                Code.E_NO_USER_CONFIRM,
+                t.id,
+                "commander 的需求没有用户显式确认留痕（commander 发需求必须先取得用户确认）",
+                owner="commander",
+                hint=(
+                    "补留痕：先请用户确认，再 coord confirm --line <线> "
+                    f'--title "{t.title}" --role <会话> --said "<用户原话>"；'
+                    "（以别的 origin 绕闸的写入在事件流里 actor 可见，可人工核）"
+                ),
+            )
+        )
 
     # 12. 合并队列里的冲突拒绝项 → 转 TL 动作项
     from .models import MergeState

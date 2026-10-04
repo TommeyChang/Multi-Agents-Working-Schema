@@ -775,6 +775,14 @@ def test_requirement_origin_is_classified(root: str, capsys: pytest.CaptureFixtu
     ]
     ids = []
     for origin, ref in cases:
+        if origin == "commander":
+            # commander 发需求必须先取得用户显式确认：先留痕，再发号。
+            # 表里 commander 那行的 ref 本就是"用户原话"，正好当 --said 用。
+            assert _run(
+                root, "confirm", "--role", "commander:cmdr", "--line", "D",
+                "--title", f"{origin} 来源", "--said", ref,
+            ) == 0
+            capsys.readouterr()  # 冲掉这条输出——下面按 JSON 解析的是 register 的
         argv = [
             "--json", "register", "--role", "po:po", "--title", f"{origin} 来源",
             "--line", "D", "--origin", origin, "--source-ref", ref,

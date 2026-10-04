@@ -31,6 +31,12 @@ from .readiness import Quota
 SCHEMA_VERSION = 1
 
 
+def _confirm_seq_of(cid: str) -> int:
+    """`C-<n>` → n（重放时把确认流水号推回原值，号不许因重建而重复）。"""
+    head, _, tail = cid.partition("-")
+    return int(tail) if head == "C" and tail.isdigit() else 0
+
+
 class StoreError(RuntimeError):
     pass
 
@@ -228,13 +234,23 @@ class Store:
 
         事件里带了**完整条目快照**，所以这里是逐字重建，不是近似恢复。
         """
-        from .models import Task
+        from .models import Confirmation, Task
 
         state = State()
         for ev in self.read_events():
             state.seq = max(state.seq, ev.seq)
             if ev.snapshot:
                 state.tasks[ev.id] = Task.from_dict(ev.snapshot)
+            # **用户确认也进事件面**：它是"用户要什么"的证据，不能像租约那样
+            # "重建时从旧缓存里捞一把"——那样证据会悄悄失真（配额踩过同一个坑）。
+            payload = (ev.detail or {}).get("confirmation")
+            if ev.verb == "confirm" and ev.result == "ok" and isinstance(payload, dict):
+                conf = Confirmation.from_dict(payload)
+                state.confirmations[conf.id] = conf
+                state.confirm_seq = max(state.confirm_seq, _confirm_seq_of(conf.id))
+            used = (ev.detail or {}).get("confirmation_used")
+            if isinstance(used, str) and used in state.confirmations:
+                state.confirmations[used].used_by = ev.id
         state.last_seq = state.seq
         self._apply_quota_file(state)
         return state
@@ -256,12 +272,23 @@ class Store:
         for tid in sorted(a & b):
             if state.tasks[tid].to_dict() != rebuilt.tasks[tid].to_dict():
                 diffs.append(f"{tid} 字段不一致")
+        ca, cb = set(state.confirmations), set(rebuilt.confirmations)
+        if ca - cb:
+            diffs.append(f"缓存多出用户确认：{sorted(ca - cb)}")
+        if cb - ca:
+            diffs.append(f"缓存缺少用户确认：{sorted(cb - ca)}")
+        for cid in sorted(ca & cb):
+            if state.confirmations[cid].to_dict() != rebuilt.confirmations[cid].to_dict():
+                diffs.append(f"用户确认 {cid} 字段不一致")
         return diffs
 
     def rebuild_and_save(self) -> State:
         """显式重建并落盘——恢复演练与 health 自检共用。
 
         **租约是运行期状态，事件面未覆盖**：重建时保留现存租约，只重建条目。
+
+        **用户确认不在此列**：它进事件面（见 `replay`），重建即还原——
+        从旧缓存里捞会把"已消费"悄悄还原成"在手"，那是证据失真。
         """
         state = self.replay()
         try:

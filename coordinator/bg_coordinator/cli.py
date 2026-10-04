@@ -504,6 +504,82 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     return _emit(result, args.json)
 
 
+def cmd_confirm(args: argparse.Namespace) -> int:
+    """**记下用户的一次显式确认**（按需求）——commander 发需求的前置。
+
+    这条动词存在的唯一理由：`commander` 既是**用户接口**又是**需求的形式化者**，
+    没有独立留痕时，"用户要的"与"它认为用户要的"在状态里长得一模一样。
+    确认必须**单独一次动作**、带**用户原话**、绑定**内容指纹**，且发号即消费。
+
+    什么时候该跑它：**用户明确说了要什么之后**（原话进 `--said`）。
+    它不产生需求、不占号——只把"用户说过"这件事留成可核的痕迹。
+    """
+    import time
+
+    from .engine import grant_confirm
+
+    st = _store(args)
+    st.init()
+    actor = _actor(args)
+    with st.lock():
+        state = st.load_state()
+        result = grant_confirm(
+            state,
+            line=args.line,
+            title=args.title,
+            by=f"{actor.role}:{actor.name}",
+            said=args.said,
+            clock=time.time(),
+            ttl=args.ttl_hours * 3600.0,
+            request_id=getattr(args, "request_id", "") or "",
+        )
+        if result.event:
+            st.append_event(result.event)
+        st.save_state(result.state)
+    return _emit(result, args.json)
+
+
+def cmd_confirms(args: argparse.Namespace) -> int:
+    """在手用户确认一览（读）——**"这条需求到底有没有用户点头"的唯一答案**。"""
+    import time
+
+    from .engine import live_confirmations
+
+    st = _store(args)
+    state = st.load_state()
+    now = time.time()
+    rows = live_confirmations(state, line=args.line or "", now=now)
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "count": len(rows),
+                    "confirmations": [
+                        {
+                            "id": c.id,
+                            "line": c.line,
+                            "title": c.title,
+                            "digest": c.digest,
+                            "by": c.by,
+                            "said": c.said,
+                            "expires_in_s": int(c.expires_at - now),
+                        }
+                        for c in rows
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+    if not rows:
+        print("在手用户确认：无（commander 要发需求，先请用户确认）")
+        return 0
+    for c in rows:
+        print(f"{c.id}  [{c.line}] {c.title}｜记录人 {c.by}｜{int(c.expires_at - now)}s 后过期")
+        print(f"    用户原话：{c.said}")
+    return 0
+
+
 def cmd_grants(args: argparse.Namespace) -> int:
     """在手授权一览——**"现在开了几个子代理"这个问题的唯一答案**。"""
     import time
@@ -937,6 +1013,11 @@ def cmd_show(args: argparse.Namespace) -> int:
     print(f"{t.id}  [{t.kind} · {t.line} 线 · {t.status}]  ver {t.ver}  轮 {t.round}")
     print(f"  标题    {t.title or '（空）'}")
     print(f"  来源    {t.origin or '（未记）'}" + (f"  ← {t.source_ref}" if t.source_ref else ""))
+    if t.confirmed_by or t.user_said:
+        # **用户确认留痕**：需求类条目"到底有没有用户点头"要一眼看得见
+        print(f"  用户确认 {t.confirmed_by or '（无记录）'}")
+        if t.user_said:
+            print(f"    用户原话：{t.user_said}")
     print(f"  优先级  {t.priority or '（未定）'}")
     print(f"  认领人  {t.owner or '（空——可认领）'}")
     print(f"  定稿人  {t.definer or '（空）'}    验收人  {t.acceptor or '（空）'}")
@@ -1252,6 +1333,23 @@ def build_parser() -> argparse.ArgumentParser:
     s_disp.add_argument("--ttl", type=float, default=3600.0, help="授权有效期秒（到期自动回收）")
     s_disp.add_argument("--json", action="store_true")
     s_disp.set_defaults(func=cmd_dispatch)
+
+    s_conf = sub.add_parser("confirm", help="记录用户对某条需求的显式确认（commander 发需求的前置）")
+    s_conf.add_argument("--role", required=True, help="记录方 role:name[:line]（自报，无鉴权，留痕可审）")
+    s_conf.add_argument("--title", required=True, help="需求标题——必须与 register 的**逐字一致**")
+    s_conf.add_argument("--line", required=True, help="线码：A/B/C/D/E/ACL/OPS")
+    s_conf.add_argument("--said", required=True, help="**用户原话**（这条记录唯一的证据面）")
+    s_conf.add_argument(
+        "--ttl-hours", dest="ttl_hours", type=float, default=12.0, help="有效期小时（默认 12）"
+    )
+    s_conf.add_argument("--request-id", default="")
+    s_conf.add_argument("--json", action="store_true")
+    s_conf.set_defaults(func=cmd_confirm)
+
+    s_confs = sub.add_parser("confirms", help="在手用户确认一览（读）")
+    s_confs.add_argument("--line", default="")
+    s_confs.add_argument("--json", action="store_true")
+    s_confs.set_defaults(func=cmd_confirms)
 
     s_grants = sub.add_parser("grants", help="在手子代理授权一览（读）")
     s_grants.add_argument("--json", action="store_true")

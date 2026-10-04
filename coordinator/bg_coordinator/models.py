@@ -217,6 +217,13 @@ class Task:
     origin: str = ""
     #: 来源引用——这条需求是从哪来的（条目号／问题号／用户原话摘要）。
     source_ref: str = ""
+    #: **用户确认留痕**——记录那次确认的会话（`role:name`）与**用户原话**。
+    #:
+    #: 为什么是两个显式字段，而不是塞进 `source_ref` 的自由文本：
+    #: 「commander 发需求必须得到用户显式确认」这条要能被**机械核**（审计报缺口），
+    #: 自由文本核不了——那正是"看起来声明了"的缺口形态。
+    confirmed_by: str = ""
+    user_said: str = ""
     #: 影响面：`intra_line`（本线自决）｜`cross_line`（越出本线，须上 PO）。
     #:
     #: TL 有本线的完全上下文，**本线的事不必经 PO 中转**；
@@ -267,6 +274,8 @@ class Task:
             "src": self.src,
             "origin": self.origin,
             "source_ref": self.source_ref,
+            "confirmed_by": self.confirmed_by,
+            "user_said": self.user_said,
             "scope": self.scope,
             "doc_sync": list(self.doc_sync),
             "constraints": list(self.constraints),
@@ -301,6 +310,8 @@ class Task:
             src=d.get("src", ""),
             origin=d.get("origin", ""),
             source_ref=d.get("source_ref", ""),
+            confirmed_by=d.get("confirmed_by", ""),
+            user_said=d.get("user_said", ""),
             scope=d.get("scope", ""),
             doc_sync=list(d.get("doc_sync", [])),
             constraints=list(d.get("constraints", [])),
@@ -402,6 +413,68 @@ class Lease:
 
     def expired(self, now: float) -> bool:
         return self.ttl > 0 and (now - self.created_at) > self.ttl
+
+
+@dataclass
+class Confirmation:
+    """**用户对某一条需求的显式确认**——内容绑定、一次性、会过期。
+
+    为什么要有这条独立记录，而不是"commander 说用户同意了"：
+
+    commander 是**用户接口**，同时又是**需求的形式化者**——没有独立留痕时，
+    "用户要的"与"commander 认为用户要的"在状态里长得一模一样，事后分不开。
+    这条记录把两者掰开，且每一条都可核：
+
+    - **内容绑定**（`digest` = 线别＋标题的指纹）：确认了 A 就不能拿去发 B；
+    - **一次性**（`used_by`）：发号那一刻消费掉，不能反复用；
+    - **会过期**（`expires_at`）：上个月的"是"不算今天的数；
+    - **必须带用户原话**（`said`）：这是这条记录唯一的证据面。
+
+    **已知残留（与 `Actor` 同级）**：`by`（记录人自报）无鉴权——协调器把它连同原话
+    记进事件流以便审计：伪造的话，用户读到"用户原话：……"一眼就知道不是自己说的。
+    """
+
+    id: str
+    line: str
+    title: str
+    digest: str
+    by: str
+    said: str
+    ts: str
+    expires_at: float
+    #: 被哪一条 `register` 消费掉（用完即销；空 = 还在手）
+    used_by: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "line": self.line,
+            "title": self.title,
+            "digest": self.digest,
+            "by": self.by,
+            "said": self.said,
+            "ts": self.ts,
+            "expires_at": self.expires_at,
+            "used_by": self.used_by,
+        }
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> Confirmation:
+        return Confirmation(
+            id=d["id"],
+            line=str(d.get("line", "")),
+            title=d.get("title", ""),
+            digest=d.get("digest", ""),
+            by=d.get("by", ""),
+            said=d.get("said", ""),
+            ts=d.get("ts", ""),
+            expires_at=float(d.get("expires_at", 0.0)),
+            used_by=d.get("used_by", ""),
+        )
+
+    def live(self, now: float) -> bool:
+        """在手 = **没被消费** 且 **没过期**。"""
+        return not self.used_by and self.expires_at > now
 
 
 class MergeState(StrEnum):

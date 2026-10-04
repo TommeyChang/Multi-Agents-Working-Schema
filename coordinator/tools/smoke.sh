@@ -272,6 +272,23 @@ check "标了真库 ⇒ 放行" "$PY" "$PKG_ROOT/tools/claims.py" --target "$REP
 check_fail "未知约束 ⇒ 定稿即拒（没有判据的约束等于没声明）" coord define --id "$TID9" --role pm:pm-D:D \
                            --whitelist 'a/**' --acceptance 'test:pytest' --constraint 别乱改
 
+echo "⑪ commander 发需求必须先取得用户显式确认"
+# 需求类（R）＋ commander 来源 ⇒ 没有确认就发不出号
+check_fail "commander 无确认发需求 ⇒ E_NO_USER_CONFIRM" coord register --role commander:cmdr \
+                             --title "接入 X" --line D --origin commander
+check "记录用户确认（带原话）" coord confirm --role commander:cmdr --line D \
+                             --title "接入 X" --said "把 X 接进来，先做只读"
+check "确认在手 ⇒ 发得出" coord register --role commander:cmdr --title "接入 X" --line D --origin commander
+check_fail "同一条确认**不能复用**（用完即销）" coord register --role commander:cmdr \
+                             --title "接入 X" --line D --origin commander
+check_fail "确认**内容不符** ⇒ 仍拒" bash -c \
+  "'$PY' -m bg_coordinator.cli --root '$ROOT' --repo '$REPO' register --role commander:cmdr \
+     --title '接入 Y' --line D --origin commander >/dev/null 2>&1"
+check_fail "确认**不带用户原话** ⇒ 拒" coord confirm --role commander:cmdr --line D \
+                             --title "接入 Z" --said "   "
+check "非 commander 来源不受此闸" coord register --role pm:pm-D:D --title "线上发现的事" \
+                             --line D --origin line
+
 echo
 echo "[smoke] 通过 $pass ／ 失败 $fail"
 [ "$fail" -eq 0 ] || exit 1

@@ -11,13 +11,23 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
 from conftest import budgeted  # noqa: E402
 
-from bg_coordinator.engine import Params, State, apply
-from bg_coordinator.models import CATEGORY_OWNER, Actor, Kind, Line, Priority, Role, TaskState
+from bg_coordinator.engine import CONFIRM_TTL_SECONDS, Params, State, apply, grant_confirm
+from bg_coordinator.models import (
+    CATEGORY_OWNER,
+    Actor,
+    Kind,
+    Line,
+    Origin,
+    Priority,
+    Role,
+    TaskState,
+)
 from bg_coordinator.schema import ROLES, all_verbs, state_verbs
 from bg_coordinator.statemachine import TRANSITIONS, is_terminal
 
@@ -145,11 +155,17 @@ def test_full_chain_closes_with_every_role(tmp_path: Path) -> None:
     tl = _actor(Role.TECH_LEAD, "TL-D")
     s = budgeted(State())
 
-    # ① 登记（任何人可登记；此处模拟 commander 转化来的形式化需求）
+    # ① 用户确认 → commander 登记（commander 发需求的前置闸：COORDINATION §六·五）
+    conf = grant_confirm(
+        s, line="D", title="K 线取数", by="user:用户", said="用户原话：要能看 K 线",
+        clock=time.time(), ttl=CONFIRM_TTL_SECONDS,
+    )
+    assert conf.ok, f"confirm 应成功却被拒：{conf.rejection}"
+    s = conf.state
     s = _run(
         s, "register", "", _actor(Role.COMMANDER, "c", None),
         Params(title="K 线取数", line=Line.D, kind=Kind.R, priority=Priority.P1,
-               origin=None, source_ref="用户原话"),
+               origin=Origin.COMMANDER, source_ref="用户原话"),
     )
     tid = next(iter(s.tasks))
 
