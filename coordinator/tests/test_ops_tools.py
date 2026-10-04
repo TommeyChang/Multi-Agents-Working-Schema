@@ -184,8 +184,25 @@ def test_probe_has_no_restart_path() -> None:
         assert forbidden not in code, f"探针**代码**里出现了 {forbidden}——红线破了"
 
 
+class _Ok(BaseHTTPRequestHandler):
+    """**真回 200** 的假服务。
+
+    别用裸 `BaseHTTPRequestHandler`：它对 GET 回 **501**，而探针把非 2xx 一律算失败——
+    于是"活着的分支"其实从没被走到，测试**通过得不对**（这种假绿比红更坏）。
+    """
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server 的约定名
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, *a) -> None:  # noqa: ANN002 - 静音，别污染测试输出
+        return
+
+
 def _server() -> tuple[HTTPServer, int]:
-    srv = HTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    srv = HTTPServer(("127.0.0.1", 0), _Ok)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, srv.server_address[1]
 
@@ -201,7 +218,7 @@ def _free_port() -> int:
 def test_probe_alive_then_dead_after_threshold(tmp_path: Path) -> None:
     srv, port = _server()
     url = f"http://127.0.0.1:{port}/"
-    rc = probe.main(["--url", url, "--state-dir", str(tmp_path), "--fail-threshold", "2"])
+    rc = probe.main(["--url", url, "--state-dir", str(tmp_path), "--fail-threshold", "2", "--json"])
     assert rc == 0, "服务活着必须退出 0"
     srv.shutdown()
 
