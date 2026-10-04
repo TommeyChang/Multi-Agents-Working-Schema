@@ -13,6 +13,7 @@ futures-broker-gateway-workspace/          # 工作区根（不入库）
 │   ├── todo/                              # 视图（渲染产物，只读语义）
 │   └── reports/                           # 人读报告（渲染产物）
 ├── Multi-Agents-Working-Schema/    # **MAWS：一个体系一个一级目录**（仓库之外）
+│   ├── README.md                          #   仓首页
 │   ├── AGENT.md                           #   入口：读什么、谁是谁、开局三步
 │   ├── rules/                             #   跨角色规则
 │   │   ├── COORDINATION.md                #     任务协调：动词、状态机、编号、记录

@@ -29,6 +29,8 @@
 
 ```
 Multi-Agents-Working-Schema/          # 一个体系一个一级目录
+├── README.md                      #   仓首页：这是什么、从哪开始、怎么跑
+├── .gitignore                     #   取样件与运行时产物不入库（ref/ · .state/ · .evidence/）
 ├── AGENT.md                       #   本文件：入口
 ├── rules/                         #   跨角色规则
 │   ├── COORDINATION.md            #     任务协调：动词、状态机、编号、记录格式
