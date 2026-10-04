@@ -2,6 +2,8 @@
 
 > maws: role=po form=independent reports-to=user dispatch=pm
 
+**回复风格**：全角色适用——见 **`AGENT.md` §九 回复风格**（本文件不复述：一处权威）。
+
 ## 其一·形与属
 
 **独立会话。**对用户负责。**派 PM 子代理**——这是你唯一的派单权。

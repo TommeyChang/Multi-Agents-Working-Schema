@@ -2,6 +2,8 @@
 
 > maws: role=dba form=independent reports-to=user dispatch=-
 
+**回复风格**：全角色适用——见 **`AGENT.md` §九 回复风格**（本文件不复述：一处权威）。
+
 ## 其一·形与属
 
 **独立会话，亲办。** **不派子代理。** 对用户负责。

@@ -2,6 +2,8 @@
 
 > maws: role=dev form=subagent reports-to=tech-lead dispatch=-
 
+**回复风格**：全角色适用——见 **`AGENT.md` §九 回复风格**（本文件不复述：一处权威）。
+
 ## 其一·形与属
 
 **子代理。** 由 **TL** 派。**只向 TL 负责。**

@@ -6,6 +6,8 @@ Schema 的价值全在对账：它治的是一类具体事故——**文档写�
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from bg_coordinator.models import CATEGORY_OWNER, Role
 from bg_coordinator.schema import (
     FAMILIES,
@@ -212,3 +214,35 @@ def test_field_drift_is_detected() -> None:
     finally:
         doc.write_text(original, encoding="utf-8")
     assert mod.reconcile().consistent
+
+# ---------------------------------------------------------------------------
+# 规范面：**一处权威 + 各角色文件指向它**
+# ---------------------------------------------------------------------------
+
+
+def test_reply_style_is_single_sourced_and_referenced() -> None:
+    """回复风格**存在于且只存在于一处**，每个角色文件都指向它。
+
+    这条是补一次真实事故的：用户 2026-10-03 定的「回复风格」七条，
+    在把体系从散稿收成 `AGENT.md` + `rules/` + `agents/` 时**整段掉了**——
+    角色文件里一个字都没有，而没人会发现，因为**丢的不是代码，是散文**。
+
+    所以钉两条：
+    ① 权威在 `AGENT.md`（且七条都在——少一条就是又被截了）；
+    ② 每个 `agents/*.md` 都指得到它（角色手册不能对"怎么说话"保持沉默）。
+    """
+    maws = Path(__file__).resolve().parents[2]
+    agent = (maws / "AGENT.md").read_text(encoding="utf-8")
+    assert "## 九、回复风格" in agent, "AGENT.md 里的「回复风格」节不见了"
+    for line in ("1. 一句指令只安排一件事",
+                 "3. 指令一句装不下就拆句",
+                 "7. 陈述同一主体时，多条事实拼成一句"):
+        assert line in agent, f"回复风格被截断：缺「{line}」"
+
+    missing = [
+        p.name
+        for p in sorted((maws / "agents").glob("*.md"))
+        if "回复风格" not in p.read_text(encoding="utf-8")
+        or "AGENT.md" not in p.read_text(encoding="utf-8")
+    ]
+    assert not missing, f"这些角色文件没有指向回复风格：{missing}"

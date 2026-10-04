@@ -2,6 +2,8 @@
 
 > maws: role=tech-lead form=independent reports-to=user dispatch=dev
 
+**回复风格**：全角色适用——见 **`AGENT.md` §九 回复风格**（本文件不复述：一处权威）。
+
 ## 其一·形与属
 
 **独立会话，每线一个。**对用户负责。**派 dev 子代理。**
