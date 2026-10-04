@@ -30,7 +30,7 @@ TEXT_ONLY_MAX = 6
 RULINGS: tuple[tuple[str, str, str], ...] = (
     # —— 回复风格（2026-10-03，全角色适用）：丢过一次，故列在第一位
     ("## 九、回复风格", "AGENT.md", "coordinator/tools/style_check.py"),
-    ("只答被问的", "AGENT.md", "coordinator/tests/test_style_check.py"),
+    ("只答被问的", "AGENT.md", TEXT),  # 用户 2026-10-04 降级：会压掉有用信息，不作硬指标
     ("禁嵌套", "AGENT.md", "coordinator/tests/test_style_check.py"),
     # —— 功能条目验收必须含闭环路径（2026-10-01）
     ("闭环路径", "rules/COORDINATION.md", "coordinator/tests/test_rules_as_gates.py"),

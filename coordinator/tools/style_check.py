@@ -44,11 +44,13 @@ def measure(text: str) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="回复风格闸（硬指标）")
-    ap.add_argument("--file", default="-", help="要校的文件（默认 stdin）")
+    ap.add_argument("path", nargs="?", default="-", help="要校的文件（默认 stdin）")
+    ap.add_argument("--file", default="", help="同 path（两者取其一）")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     try:
-        text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text(encoding="utf-8")
+        src = args.file or args.path
+        text = sys.stdin.read() if src == "-" else Path(src).read_text(encoding="utf-8")
     except OSError as exc:
         print(f"读不到：{exc}", file=sys.stderr)
         return 2
