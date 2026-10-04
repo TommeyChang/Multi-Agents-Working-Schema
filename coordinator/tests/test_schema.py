@@ -244,9 +244,8 @@ def test_reply_style_is_single_sourced_and_referenced() -> None:
     maws = Path(__file__).resolve().parents[2]
     agent = (maws / "AGENT.md").read_text(encoding="utf-8")
     assert "## 九、回复风格" in agent, "AGENT.md 里的「回复风格」节不见了"
-    for line in ("1. 一句指令只安排一件事",
-                 "3. 指令一句装不下就拆句",
-                 "7. 陈述同一主体时，多条事实拼成一句"):
+    # 2026-10-04 用户把它改成**硬指标**（六条）——护栏跟着钉新版的数字与条目
+    for line in ("≤10 行、每行 ≤120 字、单轮 ≤1500 字", "只答被问的", "一条一事", "禁嵌套"):
         assert line in agent, f"回复风格被截断：缺「{line}」"
 
     missing = [

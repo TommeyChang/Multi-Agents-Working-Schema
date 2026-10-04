@@ -242,6 +242,8 @@ check "reserve alembic 首个" bash -c "'$PY' -m bg_coordinator.cli --root '$ROO
 check_fail "reserve alembic 第二个 ⇒ E_NUMBER_INFLIGHT" "$PY" -m bg_coordinator.cli --root "$ROOT" reserve --family alembic --holder dba-b --task T-D-2
 
 # 监视器：有 delta 唤醒 / 无 delta 静默 / 任意 cwd 可跑
+check "style_check 超标必红（1）" bash -c "printf \"x%.0s\" $(seq 1 121) | '$PY' '$PKG_ROOT/tools/style_check.py' - >/dev/null 2>&1; [ \$? -eq 1 ]"
+check "style_check 达标放行（0）" bash -c "echo 一行。 | '$PY' '$PKG_ROOT/tools/style_check.py' - >/dev/null 2>&1"
 check "rule_coverage 无缺口、欠账未超上限（0）" "$PY" "$PKG_ROOT/tools/rule_coverage.py"
 check "context_budget 在预算内（0）" "$PY" "$PKG_ROOT/tools/context_budget.py"
 check_fail "context_budget 坏根 ⇒ 用法错（2）" "$PY" "$PKG_ROOT/tools/context_budget.py" --root /tmp

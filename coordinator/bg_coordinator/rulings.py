@@ -29,8 +29,9 @@ TEXT_ONLY_MAX = 6
 #: （口径 token, 它该在的落点, 兑现者 = 仓内文件 或 `文字`）
 RULINGS: tuple[tuple[str, str, str], ...] = (
     # —— 回复风格（2026-10-03，全角色适用）：丢过一次，故列在第一位
-    ("## 九、回复风格", "AGENT.md", TEXT),
-    ("禁截断语义", "AGENT.md", TEXT),
+    ("## 九、回复风格", "AGENT.md", "coordinator/tools/style_check.py"),
+    ("只答被问的", "AGENT.md", "coordinator/tests/test_style_check.py"),
+    ("禁嵌套", "AGENT.md", "coordinator/tests/test_style_check.py"),
     # —— 功能条目验收必须含闭环路径（2026-10-01）
     ("闭环路径", "rules/COORDINATION.md", "coordinator/tests/test_rules_as_gates.py"),
     # —— 调研亦须条目化（2026-10-01）："无条目不做工"由界内闸兜住（改动必须在条目白名单内）
