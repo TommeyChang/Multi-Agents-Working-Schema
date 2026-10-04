@@ -43,6 +43,16 @@ SRC_TRUNK = "主干侧"
 SRC_MAWS = "体系侧"
 SRC_NONE = "未登记"
 
+#: `migrations` 里**闸真正读**的那两个子字段 ——（子字段, 用途）。
+#:
+#: 为什么单独管：人读部分写了"基线 `origin/main`"、机读块里却漏了，是**最阴的缺口形态**——
+#: 看起来声明了，闸却取不到，于是"含迁移件的提交"全被拒（或 [6] 静默不生效）。
+#: 判据只钉**读它的代码用到的那两个**，不钉 `tool`／`naming`／`gotchas`（那是给人看的）。
+MIGRATION_SUBFIELDS: tuple[tuple[str, str], ...] = (
+    ("dir", "迁移目录：闸据此找件"),
+    ("base", "基线：新增件接在谁后面／哪些件算已落库"),
+)
+
 
 def maws_root() -> Path:
     """体系根（`bg_coordinator/binding.py` 往上三层）。"""
@@ -98,6 +108,7 @@ def validate(data: dict, fields: tuple[tuple[str, str, str], ...]) -> list[str]:
 
     三种缺口都报：缺字段、类型不符、**空值**（空 dict／空 list／空串）。
     「有字段但空着」是最危险的形态——它看起来像已经声明了。
+    `migrations` 再往下一层钉两个**闸真正读**的子字段（见 `MIGRATION_SUBFIELDS`）。
     """
     gaps: list[str] = []
     for name, kind, desc in fields:
@@ -113,6 +124,11 @@ def validate(data: dict, fields: tuple[tuple[str, str, str], ...]) -> list[str]:
             gaps.append(f"`{name}` 须为非空对象（{desc}）")
         elif kind == "list" and not (isinstance(value, list) and value):
             gaps.append(f"`{name}` 须为非空数组（{desc}）")
+    mig = data.get("migrations")
+    if isinstance(mig, dict) and mig:
+        for sub, desc in MIGRATION_SUBFIELDS:
+            if not (isinstance(mig.get(sub), str) and mig[sub].strip()):
+                gaps.append(f"`migrations.{sub}` 须为非空字符串（{desc}）")
     return gaps
 
 

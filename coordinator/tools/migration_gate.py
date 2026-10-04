@@ -80,9 +80,9 @@ def ledger_crosscheck(rows: list[mig.Migration], root: str) -> list[str]:
             continue
         entry = alloc.get(r.number)
         if entry is None:
-            notes.append(f"[6] 迁移件 {r.path}（号 {r.number}）在协调器账上查无记录——未取号")
+            notes.append(f"[7] 迁移件 {r.path}（号 {r.number}）在协调器账上查无记录——未取号")
         elif str(entry.get("state")) == "pending" and not str(entry.get("id") or ""):
-            notes.append(f"[6] 号 {r.number} 账上是待建，但件已在盘上（{r.path}）——该落物")
+            notes.append(f"[7] 号 {r.number} 账上是待建，但件已在盘上（{r.path}）——该落物")
     return notes
 
 
@@ -99,13 +99,20 @@ def main(argv: list[str] | None = None) -> int:
     base = base_of(target, args.base)
     rows = mig.load_migrations(target, vdir)
     base_rows: list[mig.Migration] = []
+    landed: mig.Landed | None = None
     if base:
         base_rows, err = mig.load_from_git(target, base, vdir)
         if err:
             print(err, file=sys.stderr)
             return 2
+        if base_rows:
+            # [6] 的对照系：已落库面（基线树）＋分叉点面——分叉点用本工作区的 HEAD 算
+            landed = mig.load_landed(target, base, "HEAD", vdir)
 
-    blocks = mig.judge(rows, base_rows, vdir)
+    blocks = mig.judge(rows, base_rows, vdir, landed=landed)
+    notes = mig.landed_notes(rows, base_rows, landed)
+    if base and base_rows and landed is None:
+        notes.append("[6] 基线树读不到（`git ls-tree` 失败）——就地改写／删除判据未生效")
     if args.root:
         try:
             blocks += ledger_crosscheck(rows, args.root)
@@ -122,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
                     "migrations": len(rows),
                     "heads": mig.heads_of(rows),
                     "blocked": blocks,
+                    "notes": notes,
                     "ok": not blocks,
                 },
                 ensure_ascii=False,
@@ -132,11 +140,18 @@ def main(argv: list[str] | None = None) -> int:
             f"迁移闸｜目标仓 {target}｜目录 {vdir}｜件数 {len(rows)}｜head {mig.heads_of(rows)}"
             + (f"｜基线 {base}" if base else "")
         )
+        for n in notes:
+            print(f"  提示 {n}")
         if blocks:
             for b in blocks:
                 print(f"  BLOCK {b}")
+            if any("[6]" in b for b in blocks):
+                print(f"  核法：git -C {target} show {base}:<路径> | diff - <路径>")
         else:
-            print("  全过：号唯一、父节点齐、单 head、全可达" + ("、新增件取号合规" if base else ""))
+            print(
+                "  全过：号唯一、父节点齐、单 head、全可达"
+                + ("、新增件取号合规、已落库件未被就地改写" if base else "")
+            )
     return 1 if blocks else 0
 
 

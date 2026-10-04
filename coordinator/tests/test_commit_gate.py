@@ -515,6 +515,66 @@ def test_migration_leg_not_applicable_without_declaration(
     assert rc == 0, capsys.readouterr()
 
 
+def test_migration_leg_blocks_landed_rewrite(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**已落库件被就地改写 ⇒ 提交时就拒**（判据 [6]，与合并闸同源）。
+
+    为什么必须前移到提交：这件一旦进了分支，评审、窗口、推送都排在后面——
+    等合并才发现，改的是"已执行过的历史"，那批 DDL 永远不会生效。
+    """
+    repo = _init_repo(tmp_path)
+    vdir = "alembic/versions"
+    _base_chain(repo, vdir, [("0001", None), ("0002", "0001")])
+    _stage(  # 已落库的 0001：改写正文（基线那份只有 pass）
+        repo,
+        f"{vdir}/0001_m.py",
+        'revision = "0001"\ndown_revision = None\n\n\ndef upgrade():\n    op.add_column("t", "x")\n',
+    )
+    root = tmp_path / "coord"
+    tid = _new_task(root, whitelist=["alembic/**"], frozen=[])
+    _bind_migrations(tmp_path, repo, monkeypatch, vdir)
+
+    rc = _run(root, tid, repo)
+    out = capsys.readouterr()
+    assert rc == 1, out
+    assert "就地改写" in out.out, out.out
+    assert "另开下一 revision" in out.out, "没给出正当路径"
+
+
+def test_migration_leg_warns_on_comment_only_correction(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**允许的例外**：剥掉 docstring 后 AST 等价 ⇒ 放行（WARN 留痕，不拦）。
+
+    基线件得先有本体（函数 ＋ docstring），否则"加了个函数"是**真**语义改动，
+    例外判据本来就不该放行——本例测的是注释与 docstring 级的更正。
+    """
+    repo = _init_repo(tmp_path)
+    vdir = "alembic/versions"
+    body = 'revision = "0001"\ndown_revision = None\n\n\ndef upgrade():\n    pass\n'
+    _stage(repo, f"{vdir}/0001_m.py", body)
+    _git(repo, "commit", "-q", "-m", "base chain")
+    _git(repo, "tag", "base")
+    _stage(
+        repo,
+        f"{vdir}/0001_m.py",
+        "# 更正：陈旧注释\n"
+        + body.replace(
+            "def upgrade():\n    pass\n",
+            'def upgrade():\n    """更正后的 docstring。"""\n    pass\n',
+        ),
+    )
+    root = tmp_path / "coord"
+    tid = _new_task(root, whitelist=["alembic/**"], frozen=[])
+    _bind_migrations(tmp_path, repo, monkeypatch, vdir)
+
+    rc = _run(root, tid, repo)
+    out = capsys.readouterr()
+    assert rc == 0, out
+    assert "WARN" in out.out and "例外" in out.out, out.out
+
+
 # ---------------------------------------------------------------------------
 # 条目级约束：**把"本条的硬要求"核成事实**
 # ---------------------------------------------------------------------------

@@ -32,9 +32,16 @@
 - **C1 取号与 registry 同步**（`check_number_pregistration`）：主仓 `todo/registry.md`
   的号段账本；MAWS 的号由协调器在**同一持锁事务**内分配，没有"先取号再登记"这一步。
 - **C2 迁移 revision 撞号**（`find_revision_collisions`）：主仓 Alembic 迁移件
-  `revision` 的唯一性；MAWS 不管理迁移件。
-- **C4 DDL 标记扫描**（`check_migration_rewrite`）：`op.create_table` 等 `DDL_MARKERS`
-  的"落库后就地改写"告警——`DDL_MARKERS`／`MIGRATION_DIR` 都是主仓专属路径与符号。
+  `revision` 的唯一性。MAWS **并入**：判据在 `migrations.py` 的 `[1]`（号唯一），
+  提交／合并／迁移闸三处共用同一处口径。
+- **C4 DDL 标记扫描**（`check_migration_rewrite`）：主仓靠 `DDL_MARKERS` 扫"改动的行里
+  有没有 DDL"，判据是**启发式**且只到 WARN。MAWS **并入但换了判据**：`migrations.py` 的
+  `[6]` 直接比 **git 对象事实**——"已落库件（路径在基线树里）的内容／存在性变了没有"，
+  不看标记、不猜 DDL，且是 **BLOCK**。主仓那套漏的三件事这里都收：① 只扫 DDL 行 ⇒
+  改 `down_revision`（把历史件重新接链）它看不见；② 区间判据（`HEAD~1..HEAD`）⇒
+  本分支**早先提交**里的改写看不见；③ 判不出"这件已落库没有" ⇒ 两类假红/漏报
+  （主仓为此打过 T-D-136／T-D-157 两轮补丁）。**MAWS 唯一的例外**是剥掉 docstring
+  后 AST 等价（注释／排版级更正，无语义改动）——这是主仓没有、而 MAWS 规则明许的一项。
 - **row-drop 标记**（`check_row_drop`／`row_drop_declarations`）：主仓
   `todo/inbox`／`todo/lines` 的"数据行消失"防整档重写闸；MAWS 的需求入口是协调器
   状态，不存在 markdown 行被陈旧副本吃掉的问题。
@@ -189,15 +196,19 @@ def judge(
                 Finding(BLOCK, path, "不在条目白名单内——疑似收编他人在途改动，或超出本条目范围")
             )
 
-    # **迁移链（提交时收口）**：改动里含迁移件 ⇒ 必须过链位判定。
+    # **迁移链（提交时收口）**：改动里含迁移件 ⇒ 必须过链位判定与保真判定。
     #
     # 为什么提交时就要判：放号只保证**号唯一**，保证不了**链位唯一**。
     # 两个 DBA 各自合法地取号、各自把父节点接到当时的 head 上，合并起来就是**两个 head**——
     # 迁升级目标不唯一。等到合并才发现，返工成本最高（分支已推、评审已过、窗口已排）。
+    # 同理，**已落库的迁移件被就地改写／删除**也在这一刻拦——改的是"已执行过的历史"，
+    # 合入即漂移、目标口径永不生效。
     # 判据与合并闸共用 `bg_coordinator/migrations.py`（**同一处口径**）。
-    blocks = migration_blocks(files, repo) if repo is not None else []
-    for reason in blocks:
+    mblocks, mwarns = migration_blocks(files, repo) if repo is not None else ([], [])
+    for reason in mblocks:
         blocked.append(Finding(BLOCK, task_id, reason))
+    for reason in mwarns:
+        warns.append(Finding(WARN, task_id, reason))
 
     # **条目级约束**：声明与改动必须对上（例：声明"零迁移"却动了迁移件 ⇒ BLOCK）。
     #
@@ -236,11 +247,14 @@ def _migrations_dir(repo: Path) -> str:
     return str(mconf.get("dir") or "").strip()
 
 
-def migration_blocks(files: list[str], repo: Path) -> list[str]:
-    """含迁移件时的链位判定——判据在 `bg_coordinator/migrations.py`，这里只负责取数与措辞。
+def migration_blocks(files: list[str], repo: Path) -> tuple[list[str], list[str]]:
+    """含迁移件时的链位与保真判定——判据在 `bg_coordinator/migrations.py`，这里只取数与措辞。
 
     迁移目录与基线**都从工程绑定取**（工程落点归工程）：`migrations.dir`／`migrations.base`。
     取不到目录 ⇒ 判定无法进行 ⇒ **BLOCK**（宁可不放行，也不假装通过）。
+
+    返回 `(blocks, warns)`：链位分叉／已落库件被就地改写成 BLOCK；注释级例外与
+    "判不出归属"是 WARN——拦的语义只有一种，注记不该拦人。
     """
     _src, path = locate_binding(repo)
     data: dict = {}
@@ -250,20 +264,26 @@ def migration_blocks(files: list[str], repo: Path) -> list[str]:
     mconf = data.get("migrations") if isinstance(data.get("migrations"), dict) else {}
     vdir = str(mconf.get("dir") or "")
     if not vdir:
-        return []  # 没有迁移目录的声明 ⇒ 本工程没有"迁移件"这类改动，不适用
+        return [], []  # 没有迁移目录的声明 ⇒ 本工程没有"迁移件"这类改动，不适用
     if not any(f.startswith(vdir.rstrip("/") + "/") for f in files):
-        return []  # 本批没有迁移件
+        return [], []  # 本批没有迁移件
     base = str(mconf.get("base") or "")
     rows = mig.load_migrations(repo, vdir)
     if not base:
         return [
             "本批含迁移件，但绑定 §迁移 没声明 `base`——**拿不到基线就无法确认链位**，"
             "这正是提交时要收的口（补 base，或改用 --base 指定）"
-        ]
+        ], []
     base_rows, err = mig.load_from_git(repo, base, vdir)
     if err:
-        return [f"本批含迁移件，但基线不可用（{err}）——链位无从确认，拒绝提交"]
-    return [f"迁移链：{b}" for b in mig.judge(rows, base_rows, vdir)]
+        return [f"本批含迁移件，但基线不可用（{err}）——链位无从确认，拒绝提交"], []
+    # [6] 的对照系：已落库面（基线树）＋分叉点面（本 worktree 的 HEAD）
+    landed = mig.load_landed(repo, base, "HEAD", vdir) if base_rows else None
+    blocks = [f"迁移链：{b}" for b in mig.judge(rows, base_rows, vdir, landed=landed)]
+    if base_rows and landed is None:
+        blocks.append("迁移链：[6] 基线树读不到（`git ls-tree` 失败）——就地改写判据未生效，拒绝提交")
+    warns = [f"迁移链：{n}" for n in mig.landed_notes(rows, base_rows, landed)]
+    return blocks, warns
 
 
 def _payload(verdict: Verdict) -> dict[str, object]:

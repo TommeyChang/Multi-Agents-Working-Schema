@@ -25,8 +25,8 @@
 python3 tools/scratch_gc.py                  # 孤儿 scratch 库判定（**默认 dry-run，只列不删**）
 python3 tools/scratch_gc.py --apply          # 真删（判据：命名空间／资产豁免／pid 活性／年龄 TTL／二次判定）
 python3 tools/preflight.py --root "$BG_COORDINATOR_ROOT"   # 开窗前预检之一腿：迁移图与触库可用
-python3 tools/migration_gate.py --base origin/main         # 迁移闸：号唯一／父节点齐／单 head／全可达
-python3 tools/commit_gate.py --task <条目号>               # 提交闸（**含迁移链位**——提交时就收口）
+python3 tools/migration_gate.py --base origin/main         # 迁移闸：号唯一／父节点齐／单 head／全可达／已落库件未被改
+python3 tools/commit_gate.py --task <条目号>               # 提交闸（**含迁移链位与保真**——提交时就收口）
 ```
 
 **迁移件的三个收口点**（放号只保证号唯一，**保证不了链位唯一**）：
@@ -36,6 +36,11 @@ python3 tools/commit_gate.py --task <条目号>               # 提交闸（**�
 | **放号** | 协调器：该族**同时只允许一个在飞占号** | 等前一个落物／让号 |
 | **提交** | `commit_gate.py` 的迁移腿 | 把 `down_revision` 接到当前 head 上；被插队则让号重取 |
 | **合并** | `merge.py` 链位闸（判据同源） | 同上，对的是即将落上去的 main head |
+
+**已落库件被就地改写／删除 ⇒ 提交闸与合并闸都会拦**（判据 `[6]`）。这不是"改回来就行"：
+已落若干库的件被改，合入后目标仓的迁移自检（口径见绑定 §迁移「已知坑」）必报漂移。
+正当动作是**新开下一 revision 补偿承载**；纯注释／docstring 更正可以直接改——
+闸剥掉 docstring 做 AST 比对，等价即放行并留痕（**不用你自证"三项一致"**）。
 
 **两条要记住的安全方向**：
 

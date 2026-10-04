@@ -801,13 +801,16 @@ def cmd_leases(args: argparse.Namespace) -> int:
 
 
 def _migration_checker(repo, commit: str):
-    """装配**链位判据**：读分支提交与 main 的迁移图，判有没有分叉／插队。
+    """装配**链位判据**：读分支提交与 main 的迁移图，判有没有分叉／插队／就地改写。
 
     两个图都**从 git 读**（`git show <ref>:<路径>`）——合并时主检出停在 main，
     分支的迁移件不在工作区里，只有 git 对象面里才有。
     判据本身在 `bg_coordinator/migrations.py`（与提交闸共用，**一处口径**）。
 
     绑定没有声明迁移目录 ⇒ 本工程没有"迁移件"这类改动 ⇒ 不适用（返回空串）。
+
+    **注记不在这里出**：本判据的返回值语义是"非空即拦"，而注释级例外与"判不出归属"
+    都不该拦人——它们由 `commit_gate` 的 WARN 面与 `migration_gate.py` 的提示面承载。
     """
     from . import migrations as mig
     from .binding import load as load_binding
@@ -836,7 +839,11 @@ def _migration_checker(repo, commit: str):
         base_rows, err2 = mig.load_from_git(repo, base, vdir)
         if err1 or err2:
             return f"迁移图不可读（{err1 or err2}）——链位无从确认"
-        return "；".join(mig.judge(rows, base_rows, vdir))
+        # [6] 的对照系：已落库面（main 树）＋分叉点面（本分支与 main 的 merge-base）
+        landed = mig.load_landed(repo, base, commit, vdir) if base_rows else None
+        if base_rows and landed is None:
+            return "[6] 基线树读不到（`git ls-tree` 失败）——已落库件是否被改写判不出来"
+        return "；".join(mig.judge(rows, base_rows, vdir, landed=landed))
 
     return check
 

@@ -11,7 +11,7 @@
 | 腿 | 判据 |
 |---|---|
 | ① 协调器自检 | 状态缓存与事件流是否一致、有无重复 seq（`Store.health`） |
-| ② 迁移图 | 单 head／号唯一／父节点齐／全可达（复用 `migration_gate.py`） |
+| ② 迁移图 | 单 head／号唯一／父节点齐／全可达／已落库件未被就地改写（复用 `migration_gate.py`） |
 | ③ 触库可用 | socket ＋ pymysql ＋ 目标仓迁移链（复用 `db_ladder.py --check`） |
 | ④ scratch 残留 | 孤儿库数量是否超阈值（复用 `scratch_gc.py` 判定；**不删任何东西**） |
 | ⑤ 宿主余量 | load1 相对核数、可用内存下限 |

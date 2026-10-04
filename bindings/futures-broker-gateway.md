@@ -49,7 +49,8 @@
 ## 四、迁移
 
 - 目录：`alembic/versions/`；工具：`alembic`；命名：`<NNNN>_<slug>`，号经协调器取；
-- **基线**：`origin/main`（提交闸与合并闸都拿它算"新增件该接在谁后面"）；
+- **基线**：`origin/main`——三个用途：新增件该接在谁后面、**哪些件算"已落库"（冻结面）**、
+  以及算本分支的**分叉点**（`merge-base(origin/main, HEAD)`，判"差异是本分支的还是落后的"）；
 - **已知坑**：`alembic check` 只拿 head 与 metadata 比，**不校验降级保真**——降级后必报差异，
   别把那个差异当成"实现漂移"。
 
@@ -61,14 +62,20 @@
 | 收口点 | 谁执行 | 判什么 |
 |---|---|---|
 | **放号** | 协调器（`SERIAL_FAMILIES`） | 该族**同时只允许一个在飞占号**——号顺序就是链位顺序 |
-| **提交** | `tools/commit_gate.py` | 本批含迁移件 ⇒ 单 head／父节点齐／全可达／新增件号单调且父节点 == 基线 head |
+| **提交** | `tools/commit_gate.py` | 本批含迁移件 ⇒ 单 head／父节点齐／全可达／新增件号单调且父节点 == 基线 head／**已落库件未被就地改写或删除** |
 | **合并** | `merge.py` 链位闸（`tools/commit_gate` 同源判据） | 同上，且对的是**即将落上去的 main head** |
 
-判据只有一处实现：`coordinator/bg_coordinator/migrations.py`。
+判据只有一处实现：`coordinator/bg_coordinator/migrations.py`（链位 `[1]`~`[5]`、保真 `[6]`）。
+
+**本工程的"已落库"判据**：路径在 `origin/main` 树里 ⇒ 冻结。**未合入的新件可自由返工**
+（那是 `[5]` 的地盘）——返工窗口就是"合入前"，这正是 R-D-90 那类误报要保住的东西。
 
 **撞上了怎么办（收口动作）**：后落地的那件把 `down_revision` 改指到**新的 head**，
 号保持（号已单调，不用重取）；若号被插队（比基线最大号还小），**让号重取**——
 号是资源，插队会让号顺序与链位顺序脱钩。
+**已落库件被改写／删除** ⇒ 不是"改回来"就完事：`0028` 那种已落两库的件被改，
+`alembic check` 会在合入后报漂移。正当动作 = **新开下一 revision 补偿承载**；
+纯注释／docstring 更正可直接改（闸会 AST 比对后放行并留痕）。
 
 ## 四·五、测试口径（供「自称与事实」闸用）
 
@@ -154,6 +161,7 @@
   },
   "migrations": {
     "dir": "alembic/versions",
+    "base": "origin/main",
     "tool": "alembic",
     "naming": "<NNNN>_<slug>",
     "gotchas": ["alembic check 只对 head 比 metadata，不校验降级保真"]

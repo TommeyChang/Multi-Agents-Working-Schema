@@ -182,6 +182,30 @@ printf 'revision = "0003"\ndown_revision = "0001"\n' > "$REPO/alembic/versions/0
 check_fail "migration_gate **分叉** ⇒ BLOCK（两个 head）" "$PY" "$PKG_ROOT/tools/migration_gate.py" --target "$REPO"
 rm -f "$REPO/alembic/versions/0003_c.py"
 
+# [6] 已落库件保真（git 对象事实）：注释级更正放行 / 真改动必拦 / 落后分支不许误报
+printf '"""docstring 原文。"""\nrevision = "0001"\ndown_revision = None\n\n\ndef upgrade():\n    pass\n' \
+  > "$REPO/alembic/versions/0001_a.py"
+git -C "$REPO" add -A >/dev/null 2>&1
+git -C "$REPO" commit -qm smoke-mig-base >/dev/null 2>&1
+git -C "$REPO" tag smoke-mig-base
+printf '"""docstring 更正。"""\n# 新增注释（无语义改动）\nrevision = "0001"\ndown_revision = None\n\n\ndef upgrade():\n    pass\n' \
+  > "$REPO/alembic/versions/0001_a.py"
+check "migration_gate **注释级更正** ⇒ 放行（允许的例外）" \
+  "$PY" "$PKG_ROOT/tools/migration_gate.py" --target "$REPO" --base smoke-mig-base
+printf '"""docstring 更正。"""\nrevision = "0001"\ndown_revision = None\n\n\ndef upgrade():\n    op.add_column("t", "x")\n' \
+  > "$REPO/alembic/versions/0001_a.py"
+check_fail "migration_gate **已落库件被就地改写** ⇒ BLOCK" \
+  "$PY" "$PKG_ROOT/tools/migration_gate.py" --target "$REPO" --base smoke-mig-base
+git -C "$REPO" checkout -q -- alembic/versions/0001_a.py
+git -C "$REPO" branch -q smoke-behind
+printf 'revision = "0003"\ndown_revision = "0002"\n' > "$REPO/alembic/versions/0003_d.py"
+git -C "$REPO" add -A >/dev/null 2>&1
+git -C "$REPO" commit -qm smoke-mig-ahead >/dev/null 2>&1
+SMOKE_MAIN_BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"
+git -C "$REPO" checkout -q smoke-behind
+check "migration_gate **落后分支不误报**（落后 ≠ 改写）" \
+  "$PY" "$PKG_ROOT/tools/migration_gate.py" --target "$REPO" --base "$SMOKE_MAIN_BRANCH"
+
 # 串行族放号闸：迁移件同时只允许一个在飞占号（号顺序＝链位顺序）
 check "reserve alembic 首个" bash -c "'$PY' -m bg_coordinator.cli --root '$ROOT' reserve --family alembic --holder dba-a --task T-D-1 >/dev/null 2>&1"
 check_fail "reserve alembic 第二个 ⇒ E_NUMBER_INFLIGHT" "$PY" -m bg_coordinator.cli --root "$ROOT" reserve --family alembic --holder dba-b --task T-D-2

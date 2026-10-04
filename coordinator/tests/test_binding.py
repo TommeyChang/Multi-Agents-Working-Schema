@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -23,7 +24,7 @@ _GOOD = {
     "version": 1,
     "lines": {"A": {"name": "auth", "workface": ["auth/"]}},
     "gate": {"entry": "tools/gate.py"},
-    "migrations": {"dir": "alembic/versions"},
+    "migrations": {"dir": "alembic/versions", "base": "origin/main"},
     "tests": {"db_marker": "db", "db_fixtures": ["db_session"]},
     "protected_assets": ["broker_gateway"],
     "scratch_namespace": "bg_",
@@ -79,6 +80,36 @@ def test_empty_value_is_a_gap_not_a_pass() -> None:
     gaps = binding.validate(data, BINDING_FIELDS)
     assert len(gaps) == 3
     assert all("须为非空" in g for g in gaps)
+
+
+def test_missing_migration_subfield_is_a_gap() -> None:
+    """`migrations` 里**闸真正读**的子字段缺了 ⇒ 报缺口。
+
+    真事：本工程的绑定人读部分写着「基线：`origin/main`」，机读块却**没有** `base`
+    ——形状上"字段齐了"（`migrations` 是非空对象），提交闸取基线却拿不到。
+    这类缺口的共同点是：**看起来声明了，读它的代码一无所获**。
+    """
+    assert binding.validate(_GOOD, BINDING_FIELDS) == []
+    for sub in ("dir", "base"):
+        data = dict(_GOOD, migrations={k: v for k, v in _GOOD["migrations"].items() if k != sub})
+        gaps = binding.validate(data, BINDING_FIELDS)
+        assert any(f"migrations.{sub}" in g for g in gaps), (sub, gaps)
+    blank = dict(_GOOD, migrations={"dir": "  ", "base": ""})
+    assert len(binding.validate(blank, BINDING_FIELDS)) == 2
+
+
+def test_bindings_readme_lists_exactly_the_required_fields() -> None:
+    """`bindings/README.md` 的字段表必须与 `BINDING_FIELDS`**同集合**。
+
+    为什么钉这条：那张表先前写着"九个必需字段"，比 `BINDING_FIELDS` 少一个 `tests`
+    ——文档少一个字段，读者就会以为可以不填。**权威只有一处**，文档只能复述它，
+    所以复述得对不对要机器来核（先前只是"人读部分说是九个"这类静默漂移）。
+    """
+    rows = (MAWS / "bindings" / "README.md").read_text(encoding="utf-8").splitlines()
+    listed = {
+        m.group(1) for ln in rows if (m := re.match(r"\| `([a-z_]+)` \|", ln)) is not None
+    } & {name for name, _kind, _desc in BINDING_FIELDS}
+    assert listed == {name for name, _kind, _desc in BINDING_FIELDS}
 
 
 def test_wrong_type_is_reported() -> None:

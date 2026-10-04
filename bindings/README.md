@@ -52,7 +52,7 @@
 `bg_coordinator/schema.py::BINDING_FIELDS` 声明——**那是唯一权威**，
 `binding.py` 只按它校验，不另立一份。
 
-九个必需字段：
+十个必需字段：
 
 | 字段 | 装什么 |
 |---|---|
@@ -60,7 +60,8 @@
 | `version` | 绑定格式版本 |
 | `lines` | 线别 → `{name, workface[]}`：本工程有哪几条线、各线工作面 |
 | `gate` | 门禁：入口／快跑标记／域映射／共享面／静态腿／发布口径／真库并发纪律 |
-| `migrations` | 迁移目录、工具、命名、已知坑 |
+| `migrations` | 迁移落点：**`dir`（目录）与 `base`（基线）是机读必需**——闸读的就是这两个；`tool`／`naming`／`gotchas` 给人看 |
+| `tests` | 测试口径：真库标记／真库夹具／基座／**自称与事实**的硬要求 |
 | `protected_assets` | 受保护资产（回收器永不触碰） |
 | `scratch_namespace` | scratch 命名空间前缀 |
 | `window` | 部署窗口段序 |
@@ -68,12 +69,15 @@
 
 **空值算缺口**。"有字段但空着"是最危险的形态——它看起来像已经声明了，所以校验器把
 空字符串／空对象／空数组一律算缺口，而不是放行。
+**子字段同样算**：`migrations` 里闸真正读的那两个（`dir`／`base`）缺了也报缺口。
+本工程的绑定踩过一次：人读部分写着「基线：`origin/main`」，机读块里却没有 `base`——
+形状上"字段齐了"，提交闸取基线却一无所获（回归用例见 `tests/test_binding.py`）。
 
 ## 四、给一个新工程上绑（五步）
 
 1. 克隆本体系（不用 fork）：`git clone <本仓>`；
 2. 在**目标工程**里写一份绑定：`<主干>/.maws/project.md`（照
-   `futures-broker-gateway.md` 的样子，机读块填齐九个字段）；
+   `futures-broker-gateway.md` 的样子，机读块填齐十个字段）；
    —— 若暂时不能动那个工程，就先写 `bindings/<工程名>.md`；
 3. `coord --repo <目标仓> bind` ⇒ 应当是「完整」；有缺口它会逐条列出；
 4. `coord maws` ⇒ 对账应当一致（绑定坏掉会在这一步报出来）；
