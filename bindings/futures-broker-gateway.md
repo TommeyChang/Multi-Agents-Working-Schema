@@ -214,7 +214,7 @@
       "infra": ["scripts", "deploy", "alembic"],
       "behavior": ["tests/behavior"]
     },
-    "public": ["main", "dfs", "alembic/versions"],
+    "public": ["main", "main.py", "dfs", "alembic/versions"],
     "note": "域→源路径前缀：单域⇒affected；跨域⇒domain；命中 public⇒full（2026-10-05 分级口径）。budget 待实测后填。"
   },
   "migrations": {
