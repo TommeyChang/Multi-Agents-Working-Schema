@@ -35,7 +35,7 @@ coord trace <id>                 # 正查：这条目凭什么算完成
 coord why <path>                 # 反查：这个文件为什么是这个样
 ```
 
-`.dsh/skills/` 放本体系的技能（流程类：什么时候做、做完怎么判）——目前一件 `rule-as-gate`。
+`.dsh/skills/` 放本体系的技能（流程类：什么时候做、做完怎么判）：`rule-as-gate`、`migration-item`、`complexity-ratchet`、`user-confirm`、`host-guard`。技能只在**以体系仓为项目根**的会话里被自动发现（不挂到工作区，也不装全局）。
 
 `ops/qcta/` 收着宿主侧「大命令顶坏整机」的修复件（取样，含判据说明）——见 `ops/qcta/README.md`。
 

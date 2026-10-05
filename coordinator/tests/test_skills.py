@@ -68,3 +68,18 @@ def test_skill_referenced_paths_exist(path: Path, text: str) -> None:
         r for r in sorted(refs) if not (COORD / r).exists() and not (MAWS / r).exists()
     ]
     assert not missing, f"{path.name} 引用了不存在的文件：{missing}"
+
+
+@pytest.mark.parametrize("path,text", _skills(), ids=lambda x: getattr(x, "name", ""))
+def test_skill_instructions_are_executable(path: Path, text: str) -> None:
+    """**功能验证**：技能里写的命令必须真能跑——`coord <动词>` 得在动词表里。
+
+    技能不挂到会话目录时，这条就是它唯一的"还能用"证明：
+    名字错了、动词改名了，这里立刻红，而不是等某个会话照着跑一遍才发现。
+    """
+    from bg_coordinator.schema import all_verbs
+
+    verbs = {v for group in all_verbs().values() for v in group}
+    used = set(re.findall(r"coord ([a-z][a-z-]+)", text))
+    unknown = sorted(used - verbs)
+    assert not unknown, f"{path.name} 用了不存在的动词：{unknown}（现有：{sorted(verbs)}）"
