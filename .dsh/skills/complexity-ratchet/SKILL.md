@@ -6,7 +6,7 @@ description: 复杂度闸（radon ratchet）：改生产面代码前后怎么跑
 # 技能：复杂度 ratchet
 
 ## 何时用
-改动触及绑定 §门禁 `complexity.paths` 的生产面（本工程：`auth`／`broker_gateway`／`data_access`／`notification`／`main`／`dfs` ＋ 四个根模块）。
+改动触及绑定 §门禁 `complexity.paths` 列出的生产面。
 
 ## 口径
 - **相对分叉点不退化**，不是绝对阈值：新增／变差到 **C 级 ⇒ BLOCK**，**B 级 ⇒ WARN**，变小不判。

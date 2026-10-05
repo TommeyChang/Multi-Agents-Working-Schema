@@ -235,7 +235,7 @@ def test_role_docs_carry_no_project_specific_paths() -> None:
         text = path.read_text(encoding="utf-8")
         for token in _PROJECT_TOKENS:
             if token in text:
-                offenders.append(f"{path.name}: {token}")
+                offenders.append(f"{path.relative_to(MAWS)}: {token}")
     assert not offenders, "角色文件里出现工程专属落点（应移入 bindings/）：\n  " + "\n  ".join(offenders)
 
 
@@ -260,7 +260,13 @@ def test_normative_surface_carries_no_project_or_workspace_landing() -> None:
     （看起来像规则，实际是某一工程的巧合）。本轮陆续收掉了 agents/ 的七处、
     rules/WORKSPACE.md 的六处、COORDINATION 与 SUBAGENT 各一处——所以钉住。
     """
-    surfaces = [MAWS / "AGENT.md", *(MAWS / "rules").glob("*.md"), *(MAWS / "agents").glob("*.md")]
+    surfaces = [
+        MAWS / "AGENT.md",
+        *(MAWS / "rules").glob("*.md"),
+        *(MAWS / "agents").glob("*.md"),
+        # **技能也是规范面**（agent 直接读它做事）——2026-10-05 纳入扫描
+        *(MAWS / ".dsh" / "skills").glob("*/SKILL.md"),
+    ]
     offenders: list[str] = []
     for path in sorted(surfaces):
         text = path.read_text(encoding="utf-8")
