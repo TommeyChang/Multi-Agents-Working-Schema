@@ -37,7 +37,7 @@ coord why <path>                 # 反查：这个文件为什么是这个样
 
 `.dsh/skills/` 放本体系的技能（流程类：什么时候做、做完怎么判）：`rule-as-gate`、`entry-lifecycle`、`deliver-evidence`、`merge-flow`、`migration-item`、`complexity-ratchet`、`user-confirm`、`subagent-dispatch`、`host-guard`。技能只在**以体系仓为项目根**的会话里被自动发现（不挂到工作区，也不装全局）。
 
-`ops/host-guard/` 收着宿主侧「大命令顶坏整机」的修复件（取样，含判据说明）——见 `ops/host-guard/README.md`。
+宿主侧「大命令顶坏整机」的修复件取样收在 `coordinator/tools/samples/host-guard/`（含判据说明与出处）。
 
 `tools/` 下是本体系自己的工具（门禁入口、迁移闸、登记闸、合并封装、影响面、预算标定、
 监视器、冒烟等），每个都能 `--help` 自证用法：
