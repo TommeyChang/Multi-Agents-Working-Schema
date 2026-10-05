@@ -305,6 +305,7 @@ def cmd_deliver(args: argparse.Namespace) -> int:
         verifier=args.verifier or "",
         verifier_exit=args.verifier_exit,
         changed_files=_flat(args.changed),
+        test_scope=getattr(args, "test_scope", "") or "",
     )
     return _write_verb(args, "deliver", p)
 
@@ -1279,6 +1280,7 @@ def build_parser() -> argparse.ArgumentParser:
         verifier={"default": ""},
         verifier_exit={"type": int, "default": None},
         changed={"nargs": "*", "default": []},
+        test_scope={"default": "", "help": "申报的测试级别：static|affected|domain|full"},
     )
     add_write("verify", cmd_verify)
     add_write("reverify", cmd_reverify, reason={"required": True})

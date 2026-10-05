@@ -80,6 +80,8 @@ class Params:
     constraints: list[str] | None = None
 
     commit: str = ""
+    #: **测试级别**（交付时申报；`scope` 已被 raise 的跨线/本线自决占用，故另名）
+    test_scope: str = ""
     gate_cmd: str = ""
     gate_exit: int = 0
     evidence_path: str = ""
@@ -1214,6 +1216,7 @@ def _apply_effects(task: Task, verb: str, actor: Actor, p: Params, ts: str) -> N
                 verifier=p.verifier,
                 verifier_exit=p.verifier_exit,
                 ts=ts,
+                scope=p.test_scope,
             )
         )
         task.changed_files = list(p.changed_files or [])

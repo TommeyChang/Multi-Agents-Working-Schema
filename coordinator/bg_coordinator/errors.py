@@ -31,6 +31,7 @@ class Code(StrEnum):
     E_CONFIRM_INVALID = "E_CONFIRM_INVALID"  # 确认记录不合用（重复／过期／已消费／内容不符）
     E_NO_USER_SAID = "E_NO_USER_SAID"  # 确认没带用户原话——那它就没有证据面
     E_NO_CLOSURE_PATH = "E_NO_CLOSURE_PATH"  # 功能条目没有闭环路径（只有模块单测）
+    E_SCOPE_MISSING = "E_SCOPE_MISSING"  # 交付没申报测试级别（分级口径无从核）
     E_DOC_UNSYNCED = "E_DOC_UNSYNCED"  # 设计面动了但文档未同批
     E_DUP_ID = "E_DUP_ID"
     E_BAD_LINE = "E_BAD_LINE"

@@ -185,6 +185,10 @@ class Evidence:
     verifier: str = ""
     verifier_exit: int | None = None
     ts: str = ""
+    #: **申报的测试级别**（`static`／`affected`／`domain`／`full`）。
+    #: 为什么要有它：分级口径（2026-10-05 用户定）必须有处可核——
+    #: 交付时报一级、合并前按**同一级**复跑，"范围对不上"才拦得住。
+    scope: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -200,6 +204,7 @@ class Evidence:
             verifier=d.get("verifier", ""),
             verifier_exit=d.get("verifier_exit"),
             ts=d.get("ts", ""),
+            scope=d.get("scope", ""),
         )
 
 

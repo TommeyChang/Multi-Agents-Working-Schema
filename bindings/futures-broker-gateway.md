@@ -120,6 +120,12 @@
   自称并发 ∧ 引用 `for_update` ∧ 既没标真库也没用真库夹具 ⇒ **BLOCK**。
   **现状 0 命中 ＝ 这条此刻被遵守；闸的价值在下一个写错的人。**
 
+### 四·五·一 测试分级（2026-10-05）
+
+`static`（每次改动）→ `affected`（交付前，`-m "not db"` 快跑通道，只跑本域）→
+`domain`（合并前，含真库档，真库档不并发）→ `full`（仅发布或命中公共面）。
+**哪一级必须齐**由 `tools/testplan.py` 按上表算出；**交付证据申报级别**，合并前同级别复跑。
+
 ## 五、资产与命名空间（DBA 面）
 
 - **受保护资产（GC 永不回收）**：`broker_gateway`、`broker_gateway_dev`、`bg_tmpl_*`（模板池）；
@@ -198,6 +204,18 @@
       "scan_face_owner": "product C20 (RADON_SCAN_DIRS + RADON_SCAN_FILES)：两处必须同集合，同步闸 tests/test_complexity.py",
       "baseline_measured": "生产面 A 2927 / B 254 / C 78 / D 4 / E 1 / F 0（3264 块，2026-10-04 实测）"
     }
+  },
+  "testplan": {
+    "domains": {
+      "auth": ["auth"],
+      "broker_gateway": ["broker_gateway"],
+      "data_access": ["data_access"],
+      "notification": ["notification"],
+      "infra": ["scripts", "deploy", "alembic"],
+      "behavior": ["tests/behavior"]
+    },
+    "public": ["main", "dfs", "alembic/versions"],
+    "note": "域→源路径前缀：单域⇒affected；跨域⇒domain；命中 public⇒full（2026-10-05 分级口径）。budget 待实测后填。"
   },
   "migrations": {
     "dir": "alembic/versions",

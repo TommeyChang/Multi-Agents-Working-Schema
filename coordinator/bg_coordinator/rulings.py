@@ -64,6 +64,8 @@ RULINGS: tuple[tuple[str, str, str], ...] = (
     # 可核的部分＝"同一任务同一时刻只发一张凭证"（engine）；
     # "该复用的却新开了"仍未闸（靠查在册 ＋ 回报留痕）——别当已闸
     ("交办单元", "rules/SUBAGENT.md", "coordinator/bg_coordinator/engine.py"),
+    # —— 测试分级：哪一级在哪个动作上必须齐（2026-10-05）
+    ("分级义务", "rules/SUBAGENT.md", "coordinator/bg_coordinator/testplan.py"),
     # —— 按角色拆读表（2026-10-04）
     ("每个角色读哪几节", "AGENT.md", "coordinator/tests/test_context_budget.py"),
 )

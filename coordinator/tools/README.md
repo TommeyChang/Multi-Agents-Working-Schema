@@ -21,6 +21,7 @@
 | `complexity.py` | **复杂度闸**（ratchet）：radon 出数，判"本分支相对**分叉点**有没有把复杂度推得更差" | 本体系自研（工具 `radon` 由工程依赖声明，判据在本体系） |
 | `smoke.sh` | 冒烟：协调器端到端一口气跑通 | 本体系自研 |
 | `rule_coverage.py` | **用户口径台账**：每条口径由谁核（工具／测试）还是只有文字；**欠账有上限** | 本体系自研（权威在 `bg_coordinator/rulings.py`） |
+| `testplan.py` | **测试分级判据**：这条改动至少要跑到哪一级（单域⇒affected／跨域⇒domain／命中公共面⇒full） | 本体系自研 |
 | `context_budget.py` | **固定上下文预算闸**：冷启动与按需面的规模现算，超预算即红 | 本体系自研（政策在 `bg_coordinator/context.py`） |
 | `watch.sh` | 监视器：脚本定时，**有 delta 才唤醒会话** | 本体系自研 |
 

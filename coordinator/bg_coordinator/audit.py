@@ -516,6 +516,25 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
             )
         )
 
+    # 11.11 **交付没申报测试级别**——分级口径（2026-10-05）的第一步只是"看得见"。
+    #
+    #       为什么不直接拦：分级要先知道"该跑哪一级"，那要绑定里的域映射；
+    #       映射没填时拦就是假红。所以先报存量，等映射齐了再收紧成 BLOCK。
+    for t in sorted(state.tasks.values(), key=lambda x: x.id):
+        ev = t.latest_evidence
+        if ev is None or ev.scope:
+            continue
+        out.append(
+            Anomaly(
+                Code.E_SCOPE_MISSING,
+                t.id,
+                f"交付证据没申报测试级别（第 {ev.round} 轮）",
+                owner=t.owner or "tech-lead",
+                hint="`deliver` 时给 `--test-scope static|affected|domain|full`；"
+                     "合并前要与交付同一级复跑",
+            )
+        )
+
     # 12. 合并队列里的冲突拒绝项 → 转 TL 动作项
     from .models import MergeState
 

@@ -56,6 +56,13 @@ MIGRATION_SUBFIELDS: tuple[tuple[str, str], ...] = (
 #: `gate.complexity` 里**闸真正读**的子字段——声明了复杂度闸就都得在。
 #: 档位（`floor`／`warn_at`）可省（有体系兜底），但**路径与基线不能省**：
 #: 省了就只能靠猜，而"猜"正是这套体系不许发生的事。
+#: `testplan` 里**判据真正读**的子字段：分级要算，就得有域映射与公共面清单。
+#: `budget`（每级时长）暂不强制：实测出来才有意义，填了才用。
+TESTPLAN_SUBFIELDS: tuple[tuple[str, str], ...] = (
+    ("domains", "域 → 源路径前缀（单域⇒affected；跨域⇒domain）"),
+    ("public", "公共面路径前缀（命中⇒full，不看域映射）"),
+)
+
 COMPLEXITY_SUBFIELDS: tuple[tuple[str, str], ...] = (
     ("base", "基线：算分叉点用（判「本分支新欠的债」）"),
     ("paths", "要判的路径（数组，非空）"),
@@ -140,6 +147,11 @@ def validate(data: dict, fields: tuple[tuple[str, str, str], ...]) -> list[str]:
         for sub, desc in MIGRATION_SUBFIELDS:
             if not (isinstance(mig.get(sub), str) and mig[sub].strip()):
                 gaps.append(f"`migrations.{sub}` 须为非空字符串（{desc}）")
+    tp = data.get("testplan")
+    if isinstance(tp, dict) and tp:
+        for sub, desc in TESTPLAN_SUBFIELDS:
+            if not tp.get(sub):
+                gaps.append(f"`testplan.{sub}` 须为非空（{desc}）")
     gate = data.get("gate")
     cx = gate.get("complexity") if isinstance(gate, dict) else None
     if isinstance(cx, dict) and cx:

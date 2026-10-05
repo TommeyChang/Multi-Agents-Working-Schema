@@ -72,6 +72,7 @@ def _full(tmp_path: Path, tid: str = "T-D-1") -> State:
         tid,
         _tl(),
         params=Params(
+            test_scope="affected",
             commit="abc1234",
             gate_cmd="uv run pytest -q",
             gate_exit=0,

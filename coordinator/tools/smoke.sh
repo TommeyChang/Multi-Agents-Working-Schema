@@ -244,6 +244,8 @@ check_fail "reserve alembic 第二个 ⇒ E_NUMBER_INFLIGHT" "$PY" -m bg_coordin
 # 监视器：有 delta 唤醒 / 无 delta 静默 / 任意 cwd 可跑
 check "style_check 超标必红（1）" bash -c 'printf "x%.0s" $(seq 1 121) | "$0" "$1" >/dev/null 2>&1; [ $? -eq 1 ]' "$PY" "$PKG_ROOT/tools/style_check.py"
 check "style_check 达标放行（0）" bash -c 'echo 一行。 | "$0" "$1" >/dev/null 2>&1' "$PY" "$PKG_ROOT/tools/style_check.py"
+check "testplan 单域 ⇒ affected（0）" bash -c '"$0" "$1" --files auth/x.py >/dev/null 2>&1' "$PY" "$PKG_ROOT/tools/testplan.py"
+check "testplan 映射不明 ⇒ 报判不了（1）" bash -c '"$0" "$1" --files brand_new/x.py >/dev/null 2>&1; [ $? -eq 1 ]' "$PY" "$PKG_ROOT/tools/testplan.py"
 check "rule_coverage 无缺口、欠账未超上限（0）" "$PY" "$PKG_ROOT/tools/rule_coverage.py"
 check "context_budget 在预算内（0）" "$PY" "$PKG_ROOT/tools/context_budget.py"
 check_fail "context_budget 坏根 ⇒ 用法错（2）" "$PY" "$PKG_ROOT/tools/context_budget.py" --root /tmp
