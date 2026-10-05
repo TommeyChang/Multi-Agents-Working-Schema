@@ -119,3 +119,52 @@ def changed_in_repo(repo: Path, base: str, head: str = "HEAD") -> list[str]:
     except (OSError, subprocess.CalledProcessError):
         return []
     return normalize(out.stdout.splitlines())
+
+
+def load_block_for(repo: Path | None = None) -> tuple[dict, str]:
+    """工程绑定里 `testplan` 的**原始块**与出处（预算等字段用它）。"""
+    from .binding import load as load_binding
+
+    path = locate_testplan(repo)
+    if path is None:
+        return {}, ""
+    data, _err = load_binding(path)
+    return (dict(data.get("testplan") or {}) if data else {}), str(path)
+
+
+def locate_testplan(repo: Path | None = None) -> Path | None:
+    """绑定文件在哪：目标仓主干标记 → 体系里**只登记了一份**时认它。"""
+    from .binding import bindings_dir
+    from .binding import locate as locate_binding
+
+    path = None
+    if repo is not None:
+        try:
+            _src, path = locate_binding(repo)
+        except Exception:  # noqa: BLE001 —— 定位不到是"没有绑定"，不是异常路径
+            path = None
+    if path is None:
+        cands = sorted(
+            p for p in bindings_dir().glob("*.md") if p.name.lower() != "readme.md"
+        )
+        path = cands[0] if len(cands) == 1 else None
+    return path
+
+
+def load_for(repo: Path | None = None) -> tuple[dict[str, list[str]], tuple[str, ...], str]:
+    """从工程绑定取（域映射, 公共面, 出处）。
+
+    定位顺序：目标仓的主干标记 → 体系里**只登记了一份**绑定（多份则必须给仓，不许猜）。
+    取不到就返回空——**调用方按失败方向自己决定**：测试面要"判不了就跑全部"（宁慢勿漏），
+    分级面要"判不了就不当罪名"。
+    """
+    from .binding import load as load_binding
+
+    path = locate_testplan(repo)
+    if path is None:
+        return {}, (), ""
+    data, _err = load_binding(path)
+    if not data:
+        return {}, (), ""
+    domains, public, _budget = load(dict(data.get("testplan") or {}))
+    return domains, public, str(path)

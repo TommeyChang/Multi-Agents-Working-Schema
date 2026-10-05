@@ -49,29 +49,26 @@ if str(_COORDINATOR_ROOT) not in sys.path:
 from bg_coordinator.target import target_repo  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# 域映射——**本体系自持**：口径定义在这里，改口径改这里
+# 域映射——**口径在工程绑定**（`testplan.domains` / `testplan.public`）
 # ---------------------------------------------------------------------------
+#
+# 为什么不再自持：同一份"域 → 路径"清单，绑定里已经有一份（分级口径 `tools/testplan.py`
+# 也读它）。两处真相必然漂——**2026-10-05 合一，绑定是唯一处**。
+#
+# 失败方向：绑定取不到 ⇒ 任何非文档改动都算"**全部域**"（宁慢勿漏），
+# 绝不静默判成"不用测"——那是最坏的假绿。
 
-#: 源路径前缀 → 测试域。历史上与目标仓原来的域口径对齐过，**现在由本件持有**。
-DOMAIN_RULES: tuple[tuple[str, str], ...] = (
-    ("auth/", "auth"),
-    ("data_access/", "data_access"),
-    ("notification/", "notification"),
-    ("broker_gateway/", "broker_gateway"),
-    ("dfs/", "infra"),
-    ("scripts/tools/", "infra"),
-)
+_DOC_ISH = (".md", ".rst", ".txt")
 
-#: 改这些文件要跑**全部域**（共享面，改动面广）
-SHARED_FILES: frozenset[str] = frozenset(
-    {
-        "main.py",
-        "settings.py",
-        "logging_config.py",
-        "pyproject.toml",
-        "alembic_metadata.py",
-    }
-)
+
+def _rules() -> tuple[dict[str, list[str]], tuple[str, ...], str]:
+    """（域→前缀, 公共面, 出处）——每次现读，改绑定即生效。"""
+    try:
+        from bg_coordinator.testplan import load_for
+
+        return load_for(target_repo(None))
+    except Exception:  # noqa: BLE001 —— 取不到就走失败方向，不抛
+        return {}, (), ""
 
 
 def domain_of(path: str) -> str | None:
@@ -83,12 +80,24 @@ def domain_of(path: str) -> str | None:
         parts = p.split("/")[1:]
         # `tests/conftest.py`、`tests/README.md` 直接躺在 tests/ 下 ⇒ 共享面
         return parts[0] if len(parts) > 1 else "*"
-    if Path(p).name in SHARED_FILES or Path(p).name.startswith("conftest"):
-        return "*"  # 全域
-    for prefix, dom in DOMAIN_RULES:
-        if p.startswith(prefix):
-            return dom
-    return None
+    domains, public, _src = _rules()
+    if not domains:
+        # 绑定没声明域映射 ⇒ **跑全部**（宁慢勿漏）；纯文档不算
+        return None if p.endswith(_DOC_ISH) else "*"
+    name = Path(p).name
+    if name in public or name.startswith("conftest"):
+        return "*"  # 全域：共享面／夹具
+    if any(p == pre or p.startswith(pre.rstrip("/") + "/") for pre in public):
+        return "*"
+    best: tuple[int, str] | None = None
+    for dom, prefixes in domains.items():
+        for pre in prefixes:
+            q = pre.strip().lstrip("/")
+            if q and (p == q or p.startswith(q.rstrip("/") + "/")) and (
+                best is None or len(q) > best[0]
+            ):
+                best = (len(q), dom)
+    return best[1] if best else None
 
 
 # ---------------------------------------------------------------------------

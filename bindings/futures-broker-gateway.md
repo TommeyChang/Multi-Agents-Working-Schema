@@ -211,10 +211,11 @@
       "broker_gateway": ["broker_gateway"],
       "data_access": ["data_access"],
       "notification": ["notification"],
-      "infra": ["scripts", "deploy", "alembic"],
+      "infra": ["scripts", "deploy", "alembic", "dfs"],
       "behavior": ["tests/behavior"]
     },
-    "public": ["main", "main.py", "dfs", "alembic/versions"],
+    "public": ["main.py", "main", "settings.py", "logging_config.py", "pyproject.toml",
+               "alembic_metadata.py", "alembic/versions"],
     "note": "域→源路径前缀：单域⇒affected；跨域⇒domain；命中 public⇒full（2026-10-05 分级口径）。budget 待实测后填。"
   },
   "migrations": {

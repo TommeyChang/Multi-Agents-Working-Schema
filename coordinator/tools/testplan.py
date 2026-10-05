@@ -26,8 +26,6 @@ if str(_COORD) not in sys.path:
     sys.path.insert(0, str(_COORD))
 
 from bg_coordinator import testplan as tp  # noqa: E402
-from bg_coordinator.binding import load as load_binding  # noqa: E402
-from bg_coordinator.binding import locate as locate_binding  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,23 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     repo = Path(args.target).resolve() if args.target else None
-    block: dict = {}
-    path = None
-    if repo is not None:
-        _src, path = locate_binding(repo)  # 有目标仓才按主干标记定位
-    if path is None:
-        # 退一步：体系里**只登记了一份**绑定时就认它（多份则必须给 --target，不许猜）
-        from bg_coordinator.binding import bindings_dir
-
-        # 只认真正的绑定文件（README 也在同一目录里）
-        cands = sorted(
-            p for p in (bindings_dir() or _COORD.parent / "bindings").glob("*.md")
-            if p.name.lower() != "readme.md"
-        )
-        path = cands[0] if len(cands) == 1 else None
-    data, _err = load_binding(path) if path else ({}, "")
-    if data:
-        block = dict(data.get("testplan") or {})
+    block, _src = tp.load_block_for(repo)
     domains, public, budget = tp.load(block)
 
     files = tp.normalize(args.files) or (tp.changed_in_repo(repo, args.base) if repo else [])
