@@ -1,6 +1,8 @@
-# ops/qcta —— 宿主侧"大命令顶坏整机"修复件（取样，2026-10-04）
+# ops/host-guard —— 宿主侧"大命令顶坏整机"修复件（取样，2026-10-04）
 
-这批不是本体系写的，是**这台机器上真实的护栏**（qcta 部署）。收在这里的原因只有一条：
+这批不是本体系写的，是**宿主上真实的护栏取样**。
+**命名**：拷贝件已中性化（原件名去掉 `qcta-` 前缀）；单元里的 `ExecStart` 保留原机路径
+`/usr/local/bin/qcta-*`——那是**出处**，改了就对不上原件。收在这里的原因只有一条：
 它们治的正是**代理跑大命令把宿主顶坏**——本体系每天都在派命令，早晚要自己有这套判据。
 
 ## 一、治的是什么（两次实测事故）
@@ -15,11 +17,11 @@
 
 | 件 | 判据（可核的地方） | 节拍 |
 |---|---|---|
-| `bin/qcta-test-guard` | ① 单进程 RSS > `MAX_RSS_MB`（默认 2048，正常 150~250MB）→ 杀；② pytest 并发 > `MAX_CONCURRENT`（默认 4）→ **从最占内存的开始杀**直到达标；③④ 2026-10-04 加固：**写盘**与孤儿 worker | 30s timer |
-| `bin/qcta-tmp-reap` | 目录名 `/tmp/pytest-<PID>` **就是创建它的主进程 PID** ⇒ PID 死即回收。**刻意不用 mtime**（目录 mtime 不随内部写入更新，会误删活跃目录）；**刻意不用 du**（上万个目录要跑 >180s，本身就是负担） | timer |
-| `bin/qcta-tests-adopt` | 每 N 秒把 dsh-web cgroup 里**除 dsh 本体外**的进程搬进池 cgroup；cgroup v2 归属 fork 继承 ⇒ 只搬父进程即可。**两道保险防搬错 dsh**（比对 MainPID ＋ 跳过 `comm="node"`）——搬错会让 dsh 被 3G 配额限制、且 systemd 认为服务已停 | 常驻 |
-| `systemd/qcta-tests-pool.service` | 独立配额池：`MemoryHigh=2G`（先限流）／`MemoryMax=3G`（硬墙）；依据"正常 150~250MB×4 并发 ≈ 1GB，但单个失控会涨到 3.4G" | — |
-| `bin/qcta-heavy-run` | 重型作业（备份／日报／ClickHouse 全量）**共用一把文件锁**（`/run/lock`，tmpfs 无死锁残留）；等不到锁以 **75** 退出（明确失败，不静默跳过）；`nice 10` ＋ `ionice 7` | 被各 unit 调用 |
+| `bin/test-guard` | ① 单进程 RSS > `MAX_RSS_MB`（默认 2048，正常 150~250MB）→ 杀；② pytest 并发 > `MAX_CONCURRENT`（默认 4）→ **从最占内存的开始杀**直到达标；③④ 2026-10-04 加固：**写盘**与孤儿 worker | 30s timer |
+| `bin/tmp-reap` | 目录名 `/tmp/pytest-<PID>` **就是创建它的主进程 PID** ⇒ PID 死即回收。**刻意不用 mtime**（目录 mtime 不随内部写入更新，会误删活跃目录）；**刻意不用 du**（上万个目录要跑 >180s，本身就是负担） | timer |
+| `bin/tests-adopt` | 每 N 秒把 dsh-web cgroup 里**除 dsh 本体外**的进程搬进池 cgroup；cgroup v2 归属 fork 继承 ⇒ 只搬父进程即可。**两道保险防搬错 dsh**（比对 MainPID ＋ 跳过 `comm="node"`）——搬错会让 dsh 被 3G 配额限制、且 systemd 认为服务已停 | 常驻 |
+| `systemd/tests-pool.service` | 独立配额池：`MemoryHigh=2G`（先限流）／`MemoryMax=3G`（硬墙）；依据"正常 150~250MB×4 并发 ≈ 1GB，但单个失控会涨到 3.4G" | — |
+| `bin/heavy-run` | 重型作业（备份／日报／ClickHouse 全量）**共用一把文件锁**（`/run/lock`，tmpfs 无死锁残留）；等不到锁以 **75** 退出（明确失败，不静默跳过）；`nice 10` ＋ `ionice 7` | 被各 unit 调用 |
 
 配置在 `default/`（`MAX_RSS_MB`／`MAX_CONCURRENT` 等）。
 

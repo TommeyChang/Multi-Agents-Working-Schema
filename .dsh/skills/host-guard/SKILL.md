@@ -12,7 +12,7 @@ description: 跑大命令前的自保：输出落盘、分批取代长跑、限�
 - 10-03：单个 pytest 跑 2004 例涨到 3.4G 常驻 ＋ 7.2G swap，整机进 D 状态、dsh 假死 20s。
 - 10-04：两个孤儿 xdist worker 空转 1h49m，写 40GB ＋ 32GB，磁盘 1.5h 从 73G 涨到 136G。
 - 同因：agent 命令与 dsh 本体同 cgroup（DSH 的 bash 工具硬编码 `bash -c`，无 cgroup 开关）。
-- 取样与判据见 `ops/qcta/README.md`。
+- 取样与判据见 `ops/host-guard/README.md`。
 
 ## 四条做法
 1. **输出落盘**：大输出写文件，只回报「命令 ＋ 退出码 ＋ 摘要数字 ＋ 路径」——别 `cat` 大文件、别 `ls -R` 打全树。
