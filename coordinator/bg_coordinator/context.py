@@ -44,9 +44,13 @@ ROLE_MAX = 4700
 #: 冷启动合计预算（字符）：`AGENT.md` ＋ 任一角色文件（取最坏的那个角色）。
 #: 2026-10-04 由 9800 抬到 10400：同一次抬 ROLE_MAX 的理由（角色文件加了读表），
 #: 合计面跟着动——**抬两个是对的，只抬一个会让合计悄悄失效**。
-COLD_START_MAX = 10400
-#: 按需面总量预算（字符）：`rules/*.md` 合计
-RULES_TOTAL_MAX = 30000
+COLD_START_MAX = 10300
+#: 常翻面总量预算（字符）：`rules/*.md` 合计，**不含 `*-details.md`**。
+#:
+#: 口径说明（2026-10-05 收紧）：这条管的是"**实践中几乎每轮都要翻**"的量。
+#: 分册（`*-details.md`）恰恰是"按需才读"的那一半，计进来会奖励"把东西挪来挪去"——
+#: 它们单独可见（`rules_detail_total`），但不占这条预算。
+RULES_TOTAL_MAX = 22000
 #: **常规轮次实际会读的面**（字符）：`AGENT.md` ＋ 最重角色 ＋ 两份动作面主文件。
 #:
 #: 为什么单列这一条：按需面里真正每轮都翻的就是这四份——总量上限管不住
@@ -54,7 +58,7 @@ RULES_TOTAL_MAX = 30000
 #: 查阅型细节（`rules/*-details.md`）**不计入**：它们只在需要时读，
 #: 计进来反而会奖励"把东西挪来挪去"。
 #: 2026-10-04 由 22000 抬到 22500：同一次抬法的第三处（角色文件变重是读表的代价）。
-ROUTINE_MAX = 22500
+ROUTINE_MAX = 21900
 #: 动作面主文件（常规轮次会读的两份 rules）
 ROUTINE_RULES = ("rules/COORDINATION.md", "rules/WORKSPACE.md")
 
@@ -105,16 +109,16 @@ ROLE_READS: dict[str, tuple[tuple[str, tuple[str, ...] | None], ...]] = {
 #: dev 不改状态 ⇒ 完全不需要动词表与合入面。数字 = 实测 ＋ 约 4% 余量——
 #: 超了说明有人往这个角色的面上加了东西，得先删或显式抬。
 ROLE_READ_MAX: dict[str, int] = {
-    "commander": 16500,
+    "commander": 16200,
     # 2026-10-05 +400：同上（po 派 pm，派单口径在它面上）
-    "po": 16800,
+    "po": 15300,
     "pm": 14000,
-    "tech-lead": 27300,
+    "tech-lead": 25300,
     # dev 也要读派单面（它可再开 dev）——SUBAGENT §二 写明累计口径后 +200
     # 2026-10-05 +200：SUBAGENT §七·五「交办单元」——dev 可再开 dev，要读派单口径
     "dev": 16200,
-    "dba": 15800,
-    "ops": 14700,
+    "dba": 15300,
+    "ops": 14300,
 }
 
 #: 按需面（不进任何角色的必读集，读不读由事决定）：查阅型分册 ＋ 体系自身风险表
@@ -186,10 +190,11 @@ def measure(maws_root: Path) -> dict:
     roles: dict[str, int] = {}
     for path in sorted(maws_root.glob(COLD_ROLE_GLOB)):
         roles[str(path.relative_to(maws_root))] = len(path.read_text(encoding="utf-8"))
-    rules = {
-        str(p.relative_to(maws_root)): len(p.read_text(encoding="utf-8"))
-        for p in sorted(maws_root.glob(ON_DEMAND_GLOB))
-    }
+    rules = {}
+    details: dict[str, int] = {}
+    for p in sorted(maws_root.glob(ON_DEMAND_GLOB)):
+        rel = str(p.relative_to(maws_root))
+        (details if "-details" in p.name else rules)[rel] = len(p.read_text(encoding="utf-8"))
     worst_role = max(roles.items(), key=lambda kv: kv[1]) if roles else ("", 0)
     routine = {**cold, **{k: roles.get(k, 0) for k in [worst_role[0]]},
                **{k: rules.get(k, 0) for k in ROUTINE_RULES}}
@@ -222,6 +227,7 @@ def measure(maws_root: Path) -> dict:
         "cold_start_max": sum(cold.values()) + worst_role[1],
         "cold_start_worst_role": worst_role[0],
         "rules_total": sum(rules.values()),
+        "rules_detail_total": sum(details.values()),
         "routine": {k: v for k, v in routine.items() if v},
         "routine_total": sum(routine.values()),
         "budgets": {
