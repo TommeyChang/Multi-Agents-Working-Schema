@@ -60,6 +60,10 @@ RULINGS: tuple[tuple[str, str, str], ...] = (
     # —— 固定上下文规模（2026-10-04）
     ("context_budget.py", "AGENT.md", "coordinator/tools/context_budget.py"),
     ("规模有预算、有闸", "rules/COORDINATION.md", "coordinator/bg_coordinator/context.py"),
+    # —— 开子代理的交办单元：一次性 vs 可复用（2026-10-05）
+    # 可核的部分＝"同一任务同一时刻只发一张凭证"（engine）；
+    # "该复用的却新开了"仍未闸（靠查在册 ＋ 回报留痕）——别当已闸
+    ("交办单元", "rules/SUBAGENT.md", "coordinator/bg_coordinator/engine.py"),
     # —— 按角色拆读表（2026-10-04）
     ("每个角色读哪几节", "AGENT.md", "coordinator/tests/test_context_budget.py"),
 )

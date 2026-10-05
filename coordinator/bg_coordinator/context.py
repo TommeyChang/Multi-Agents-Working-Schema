@@ -106,11 +106,13 @@ ROLE_READS: dict[str, tuple[tuple[str, tuple[str, ...] | None], ...]] = {
 #: 超了说明有人往这个角色的面上加了东西，得先删或显式抬。
 ROLE_READ_MAX: dict[str, int] = {
     "commander": 16500,
-    "po": 16400,
+    # 2026-10-05 +400：同上（po 派 pm，派单口径在它面上）
+    "po": 16800,
     "pm": 14000,
     "tech-lead": 27300,
     # dev 也要读派单面（它可再开 dev）——SUBAGENT §二 写明累计口径后 +200
-    "dev": 15900,
+    # 2026-10-05 +200：SUBAGENT §七·五「交办单元」——dev 可再开 dev，要读派单口径
+    "dev": 16200,
     "dba": 15800,
     "ops": 14700,
 }
