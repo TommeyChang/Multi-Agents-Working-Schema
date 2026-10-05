@@ -48,7 +48,11 @@ def main(argv: list[str] | None = None) -> int:
         # 退一步：体系里**只登记了一份**绑定时就认它（多份则必须给 --target，不许猜）
         from bg_coordinator.binding import bindings_dir
 
-        cands = sorted((bindings_dir() or _COORD.parent / "bindings").glob("*.md"))
+        # 只认真正的绑定文件（README 也在同一目录里）
+        cands = sorted(
+            p for p in (bindings_dir() or _COORD.parent / "bindings").glob("*.md")
+            if p.name.lower() != "readme.md"
+        )
         path = cands[0] if len(cands) == 1 else None
     data, _err = load_binding(path) if path else ({}, "")
     if data:
