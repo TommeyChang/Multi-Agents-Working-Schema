@@ -544,7 +544,14 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
         m.task_id for m in state.merges.values() if m.state == MergeState.MERGED
     }
     for t in sorted(state.tasks.values(), key=lambda x: x.id):
-        if t.status == _TS.ACCEPTED and t.id not in merged_tasks:
+        if t.status != _TS.ACCEPTED or t.id in merged_tasks:
+            continue
+        # **失败方向**：只有"真交付了代码"（证据里有 commit）的条目才有"合入"一说；
+        # 复核/口径类条目不改码 ⇒ 没有 commit ⇒ 这条不点它（否则全是假红）。
+        ev = t.latest_evidence
+        if ev is None or not ev.commit or ev.commit.lower() in ("none", "-"):
+            continue
+        if True:
             out.append(
                 Anomaly(
                     Code.E_ACCEPTED_UNMERGED,

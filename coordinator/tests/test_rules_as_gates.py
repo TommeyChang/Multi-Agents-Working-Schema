@@ -186,13 +186,24 @@ def test_audit_flags_accepted_but_never_merged() -> None:
     from bg_coordinator.audit import audit
     from bg_coordinator.engine import State
     from bg_coordinator.errors import Code
-    from bg_coordinator.models import MergeRequest, MergeState, Task, TaskState
+    from bg_coordinator.models import Evidence, MergeRequest, MergeState, Task, TaskState
 
     s = budgeted(State())
-    s.tasks["T-D-1"] = Task(id="T-D-1", kind=Kind.T, line="D", status=TaskState.ACCEPTED,
-                            owner="TL-D")
+    s.tasks["T-D-1"] = Task(
+        id="T-D-1", kind=Kind.T, line="D", status=TaskState.ACCEPTED, owner="TL-D",
+        evidence=[Evidence(round=1, commit="abc123", gate_cmd="pytest -q", gate_exit=0,
+                           evidence_path="x.log")],
+    )
     hits = [a for a in audit(s) if a.code == Code.E_ACCEPTED_UNMERGED]
     assert [a.id for a in hits] == ["T-D-1"], "验收未合入没被点名"
+
+    # **不假红**：复核/口径类条目（没有 commit ⇒ 没有可合入的东西）不该被点
+    s.tasks["T-D-2"] = Task(
+        id="T-D-2", kind=Kind.T, line="D", status=TaskState.ACCEPTED, owner="TL-D",
+        evidence=[Evidence(round=1, commit="none", gate_cmd="probe", gate_exit=0,
+                           evidence_path="x.log")],
+    )
+    assert [a.id for a in audit(s) if a.code == Code.E_ACCEPTED_UNMERGED] == ["T-D-1"],         "无代码交付物的条目被误点（假红）"
 
     # 有合入记录即销
     s.merges["M-1"] = MergeRequest(merge_id="M-1", task_id="T-D-1", branch="dev/x",
