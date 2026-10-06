@@ -1145,6 +1145,46 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_schedule(args: argparse.Namespace) -> int:
+    """**调度器**：每个角色下一步该做什么（取代"读视图自己对账"）。
+
+    只算不动；它给的每个动作都带放行判据。视图留作证据，不再是找活的入口。
+    """
+    import time as _time
+
+    from .models import Role as _Role
+    from .schedule import plan as _plan
+    from .schedule import plan_role as _plan_role
+
+    st = _store(args)
+    state = st.load_state()
+    line = args.line or "D"
+    now = _time.time()
+    if args.role_name:
+        role = _Role(canonical_role(args.role_name))
+        actions = _plan_role(state, role, line, now)
+        if args.json:
+            print(json.dumps({"role": role.value, "line": line,
+                              "actions": [a.__dict__ for a in actions]}, ensure_ascii=False))
+        else:
+            print(f"{role.value}@{line} 下一步 {len(actions)} 项：")
+            for a in actions:
+                print(f"  {a.verb:<14} {a.task_id:<14} {a.reason}")
+            if not actions:
+                print("  （无——当前没有轮到你的事）")
+        return 0
+    plans = _plan(state, line, now)
+    if args.json:
+        print(json.dumps({r: [a.__dict__ for a in acts] for r, acts in plans.items()},
+                         ensure_ascii=False))
+    else:
+        for r, acts in plans.items():
+            print(f"{r}：{len(acts)} 项")
+            for a in acts:
+                print(f"  {a.verb:<14} {a.task_id:<14} {a.reason}")
+    return 0
+
+
 def cmd_ready(args: argparse.Namespace) -> int:
     """可认领清单；`--fanout` 给出**可同时开工的批次**。
 
@@ -1468,6 +1508,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("report")
     s.add_argument("--out", default=None)
     s.set_defaults(func=cmd_report)
+
+    s_sched = sub.add_parser("schedule", help="调度器：每个角色下一步该做什么（只算不动）")
+    s_sched.add_argument("--role", dest="role_name", default="", help="只看某角色")
+    s_sched.add_argument("--line", default="")
+    s_sched.set_defaults(func=cmd_schedule)
 
     s = sub.add_parser("ready", help="可认领清单；--fanout 给可并行批次")
     s.add_argument("--role-name", default="tech-lead")

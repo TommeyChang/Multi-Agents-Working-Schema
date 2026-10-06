@@ -203,7 +203,8 @@ def test_audit_flags_accepted_but_never_merged() -> None:
         evidence=[Evidence(round=1, commit="none", gate_cmd="probe", gate_exit=0,
                            evidence_path="x.log")],
     )
-    assert [a.id for a in audit(s) if a.code == Code.E_ACCEPTED_UNMERGED] == ["T-D-1"],         "无代码交付物的条目被误点（假红）"
+    got = [a.id for a in audit(s) if a.code == Code.E_ACCEPTED_UNMERGED]
+    assert got == ["T-D-1"], f"无代码交付物的条目被误点（假红）：{got}"
 
     # 有合入记录即销
     s.merges["M-1"] = MergeRequest(merge_id="M-1", task_id="T-D-1", branch="dev/x",

@@ -66,6 +66,8 @@ RULINGS: tuple[tuple[str, str, str], ...] = (
     ("交办单元", "rules/SUBAGENT.md", "coordinator/bg_coordinator/engine.py"),
     # —— 测试分级：哪一级在哪个动作上必须齐（2026-10-05）
     ("分级义务", "rules/SUBAGENT.md", "coordinator/bg_coordinator/testplan.py"),
+    # —— 调度器取代文档对账（2026-10-06）
+    ("调度器取代文档对账", "rules/COORDINATION.md", "coordinator/bg_coordinator/schedule.py"),
     # —— 按角色拆读表（2026-10-04）
     ("每个角色读哪几节", "AGENT.md", "coordinator/tests/test_context_budget.py"),
 )
