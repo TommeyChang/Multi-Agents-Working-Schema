@@ -111,7 +111,8 @@ ROLE_READS: dict[str, tuple[tuple[str, tuple[str, ...] | None], ...]] = {
 ROLE_READ_MAX: dict[str, int] = {
     "commander": 16200,
     # 2026-10-05 +400：同上（po 派 pm，派单口径在它面上）
-    "po": 15300,
+    # 2026-10-06 +100：SUBAGENT §七 加「预热」（开工即启动／接活才领凭证）——po 是派单方，必读
+    "po": 15400,
     "pm": 14000,
     "tech-lead": 25300,
     # dev 也要读派单面（它可再开 dev）——SUBAGENT §二 写明累计口径后 +200

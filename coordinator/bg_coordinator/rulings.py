@@ -39,6 +39,11 @@ RULINGS: tuple[tuple[str, str, str], ...] = (
     # —— commander 不得直开 dev／dev 可再开 dev（2026-10-04）
     ("不直开 dev", "agents/commander.md", "coordinator/bg_coordinator/schema.py"),
     ("不得直开 dev", "rules/SUBAGENT.md", "coordinator/bg_coordinator/schema.py"),
+    # —— 终态条目必须销账（2026-10-06，收窄版：只点终态）——**曾丢过一次**（提交信息说登记了、
+    #    文件里却没有；台账查不出自己的行被删），补回
+    ("终态条目必须销账", "rules/SUBAGENT.md", "coordinator/bg_coordinator/audit.py"),
+    # —— 可复用子代理预热启动、公共信息预置、续派只给增量（2026-10-06）
+    ("开工即启动", "rules/SUBAGENT.md", TEXT),
     # —— 开子代理仅限 PO 与 TL（2026-10-06，仅限 MAWS；**撤销** 10-04 的 dev→dev 例外）
     ("pm 与 dev 无派单权", "rules/SUBAGENT.md", "coordinator/bg_coordinator/schema.py"),
     # —— 线 pm 能否开 dev（2026-10-04 未规定 → **2026-10-06 已裁定：不能**，
