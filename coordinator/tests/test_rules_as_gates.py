@@ -234,3 +234,41 @@ def test_terminal_task_holding_grant_is_flagged() -> None:
     # 收窄的另一半：非终态（在办）持证 ⇒ 不点
     r.state.tasks["T-D-1"].status = TaskState.IN_PROGRESS
     assert not [a for a in audit(r.state) if a.code == Code.E_GRANT_AFTER_DONE]
+
+
+def test_complete_requires_note_and_released_grants() -> None:
+    """自主闭环的最小判据（2026-10-06 用户定）：裸收口不算闭环。"""
+    import time as _time
+
+    from bg_coordinator.engine import State, apply, grant_dispatch
+    from bg_coordinator.errors import Code
+    from bg_coordinator.models import Actor, Kind, Line, Role, Task, TaskState
+
+    def _ops() -> Actor:
+        return Actor(role=Role.OPS, name="ops", line=Line.OPS)
+
+    s = budgeted(State())
+    s.tasks["OPS-1"] = Task(id="OPS-1", kind=Kind.T, line="OPS",
+                            status=TaskState.IN_PROGRESS, owner="ops")
+    # ① 没 note ⇒ 拒
+    r = apply(s, "complete", "OPS-1", _ops())
+    assert not r.ok and r.rejection.code == Code.E_INCOMPLETE and "note" in r.rejection.message
+
+    # ② 有 note 但凭证在手 ⇒ 拒（先销账）
+    g = grant_dispatch(s, holder="ops:ops", task_id="OPS-1", line="OPS",
+                       clock=_time.time(), ttl=3600)
+    assert g.ok, g.rejection
+    from bg_coordinator.engine import Params as _P
+
+    r2 = apply(g.state, "complete", "OPS-1", _ops(), params=_P(reason="已执行留痕"))
+    assert not r2.ok and r2.rejection.code == Code.E_GRANT_NOT_RELEASED
+    assert "release" in r2.rejection.hint
+
+    # ③ note 齐 ＋ 凭证已释放 ⇒ 过
+    from bg_coordinator.engine import release_lease
+
+    lid = next(iter(g.state.leases))
+    g2 = release_lease(g.state, lid, "ops:ops", clock=_time.time())
+    assert g2.ok, g2.rejection
+    r3 = apply(g2.state, "complete", "OPS-1", _ops(), params=_P(reason="已执行留痕"))
+    assert r3.ok, r3.rejection

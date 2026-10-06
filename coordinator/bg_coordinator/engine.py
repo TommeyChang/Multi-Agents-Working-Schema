@@ -518,6 +518,31 @@ def apply(  # noqa: C901 - 动词分派本身就是一个 switch，拆开反而�
         if rej:
             return _reject(new, ts, verb, task_id, actor, expect_ver, rid, rej, task=task)
 
+    # **自主闭环的最小判据**（2026-10-06 用户定）：
+    # complete/review 之前是裸收口——"自主"建立在角色可信度上，不在判据上。
+    # 最小两条：① 收口必须给 note（理由／证据摘要）；② 关联凭证必须已销账
+    # （不然一进终态就被 E_GRANT_AFTER_DONE 点名——那说明这条本身就没走完）。
+    if verb in {"complete", "review"}:
+        if not p.reason.strip():
+            return _reject(
+                new, ts, verb, task_id, actor, expect_ver, rid,
+                Rejection(
+                    Code.E_INCOMPLETE,
+                    f"{task_id} 收口必须给 note（理由／证据摘要）——裸收口不算闭环",
+                    id=task_id, owner=actor.name,
+                    hint="--reason '<为什么算完成：做了什么、留了什么痕>'",
+                ), task=task)
+        held = [ls for ls in active_grants(new) if ls.task == task_id]
+        if held:
+            return _reject(
+                new, ts, verb, task_id, actor, expect_ver, rid,
+                Rejection(
+                    Code.E_GRANT_NOT_RELEASED,
+                    f"{task_id} 还有 {len(held)} 张在手凭证（{held[0].lease_id}）——先销账再收口",
+                    id=task_id, owner=held[0].holder,
+                    hint=f"`coord release --id {held[0].lease_id}`；终态条目不派活，凭证不该留着",
+                ), task=task)
+
     # **返工必须给原因**——与阻断同理：把东西退回去，理由就是它唯一的信息。
     if verb == "reverify" and not p.reason.strip():
         return _reject(
