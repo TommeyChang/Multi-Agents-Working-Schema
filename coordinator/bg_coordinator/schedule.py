@@ -68,6 +68,26 @@ def plan_role(state: State, role: Role, line: str, now: float = 0.0) -> list[Act
             elif t.status in _NON_TERMINAL and not (t.priority or "").strip():
                 out.append(Action("priority", t.id,
                                   "未定优先级——不定就永远不就绪（就绪判据会挡住所有人）"))
+    elif role is Role.OPS:
+        # **OPS 线自主闭环**：认领与交付都是 ops 自己（`complete` 收口，见状态机）。
+        # 2026-10-06 新派单权让 ops 也能把手上工作**并发**派给 dev。
+        for t in _by_priority(tasks):
+            if t.status == TaskState.REGISTERED and not t.owner:
+                out.append(Action("dispatch", t.id,
+                                  "自主闭环线：派 dev 并发执行（10-06 新权），或自办"))
+    elif role is Role.DBA:
+        # **评审即入库**（`review` 收口）：白名单触及迁移目录的已交付条目待评审；
+        # 2026-10-06 新派单权同样适用（dba 可派 dev）。
+        mig_dir = _migrations_dir()
+        for t in _by_priority(tasks):
+            if t.status == TaskState.REGISTERED and not t.owner:
+                out.append(Action("dispatch", t.id,
+                                  "可派 dev 执行（10-06 新权），或自办"))
+            elif mig_dir and t.status in (TaskState.DELIVERED, TaskState.VERIFIED) and any(
+                w.lstrip("./").startswith(mig_dir) for w in (t.whitelist or [])
+            ):
+                out.append(Action("review", t.id,
+                                  f"白名单触及 {mig_dir}——评审即入库（review）"))
     elif role is Role.COMMANDER:
         from .models import LeaseState
 
@@ -80,9 +100,23 @@ def plan_role(state: State, role: Role, line: str, now: float = 0.0) -> list[Act
     return out
 
 
+def _migrations_dir() -> str:
+    """绑定 §迁移 的 `dir`（评审信号来自绑定，不写死）。"""
+    try:
+        from .binding import load as load_binding
+        from .testplan import locate_testplan
+
+        path = locate_testplan(None)
+        data, _err = load_binding(path) if path else ({}, "")
+        mig = (data or {}).get("migrations") or {}
+        return str(mig.get("dir") or "").strip("/")
+    except Exception:  # noqa: BLE001 —— 取不到 ⇒ 评审信号静默不触发（不造假）
+        return ""
+
+
 def plan(state: State, line: str, now: float = 0.0) -> dict[str, list[Action]]:
     """全角色计划——`coord schedule` 的数据面。"""
     return {
         role.value: plan_role(state, role, line, now)
-        for role in (Role.PO, Role.PM, Role.TECH_LEAD, Role.COMMANDER)
+        for role in (Role.PO, Role.PM, Role.TECH_LEAD, Role.COMMANDER, Role.OPS, Role.DBA)
     }

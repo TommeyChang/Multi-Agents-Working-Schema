@@ -151,3 +151,32 @@ def test_po_lane_prioritizes_unprioritized_and_blocked() -> None:
     assert ("priority", t1) in acts, "未定优先级的条目没进 PO 计划"
     assert ("unblock", "T-D-7") in acts, "阻塞条目没进 PO 计划"
     assert not [a for a in plan_role(s2, Role.PO, "D") if a.task_id == t1 and a.verb != "priority"]
+
+
+def test_ops_lane_dispatch_on_registered() -> None:
+    """OPS 线自主闭环：未认领条目 ⇒ 调度器让它派 dev（10-06 新权）或自办。"""
+    from bg_coordinator.models import Task
+
+    s = budgeted(State())
+    s.tasks["OPS-1"] = Task(id="OPS-1", kind=Kind.T, line="OPS", title="巡检脚本")
+    acts = {(a.verb, a.task_id) for a in plan_role(s, Role.OPS, "OPS")}
+    assert ("dispatch", "OPS-1") in acts
+    # 已认领（有 owner）就不重复派
+    s.tasks["OPS-1"].owner = "ops"
+    assert not [a for a in plan_role(s, Role.OPS, "OPS")]
+
+
+def test_dba_lane_review_on_migrations_and_dispatch() -> None:
+    """dba：白名单触及迁移目录的已交付条目 ⇒ review（评审即入库）；未认领 ⇒ dispatch。"""
+    from bg_coordinator.models import Task
+
+    s = budgeted(State())
+    s.tasks["T-D-1"] = Task(id="T-D-1", kind=Kind.T, line="D", title="迁移条目",
+                            status=TaskState.DELIVERED, whitelist=["alembic/versions/**"])
+    s.tasks["T-D-2"] = Task(id="T-D-2", kind=Kind.T, line="D", title="普通条目",
+                            status=TaskState.DELIVERED, whitelist=["auth/**"])
+    s.tasks["T-D-3"] = Task(id="T-D-3", kind=Kind.T, line="D", title="未认领")
+    acts = {(a.verb, a.task_id) for a in plan_role(s, Role.DBA, "D")}
+    assert ("review", "T-D-1") in acts, "触及迁移目录的已交付条目没进评审"
+    assert ("review", "T-D-2") not in acts, "普通条目不该进评审（假红）"
+    assert ("dispatch", "T-D-3") in acts
