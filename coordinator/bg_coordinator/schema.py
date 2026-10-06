@@ -164,7 +164,7 @@ ROLES: tuple[RoleSpec, ...] = (
         key=Role.OPS.value,
         form="independent",
         reports_to="user",
-        dispatch=(),
+        dispatch=("dev",),
         brief="部署、迁移窗口执行、巡检、容量；完全权限但只在本面",
         workface=("部署面（见工程绑定 §线别与工作面）", "服务器与后台任务", "迁移执行窗口"),
     ),
@@ -172,7 +172,7 @@ ROLES: tuple[RoleSpec, ...] = (
         key=Role.DBA.value,
         form="independent",
         reports_to="user",
-        dispatch=(),
+        dispatch=("dev",),
         brief="迁移评审闸 ＋ 实例运维；评审即入库",
         workface=("迁移件评审", "备份/恢复/容量/慢查询/授权", "资源回收执行层"),
     ),
@@ -386,6 +386,8 @@ def reconcile() -> SchemaReport:
         Role.COMMANDER.value: {Role.PO.value},
         Role.PO.value: {Role.PM.value},
         "tech-lead": {Role.DEV.value},
+        Role.OPS.value: {Role.DEV.value},
+        Role.DBA.value: {Role.DEV.value},
     }
     for r in ROLES:
         if not r.can_dispatch:
@@ -393,7 +395,7 @@ def reconcile() -> SchemaReport:
         allowed = _DISPATCH_RIGHTS.get(r.key)
         if allowed is None:
             drifts.append(Drift("dispatch-rights",
-                             f"{r.key} 有派单权——仅限 commander／PO／TL（10-06）"))
+                             f"{r.key} 有派单权——仅限独立角色（10-06：pm／dev 除外）"))
         elif set(r.dispatch) != allowed:
             drifts.append(Drift("dispatch-rights", f"{r.key} 的派单边只许是 {sorted(allowed)}：{r.dispatch}"))
 
