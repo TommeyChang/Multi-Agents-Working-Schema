@@ -292,6 +292,11 @@ def cmd_claim_dev(args: argparse.Namespace) -> int:
     return _write_verb(args, "claim-dev", Params())
 
 
+def cmd_freeze(args: argparse.Namespace) -> int:
+    """固化范围与验收快照（DEFINED→DEFINED 的落痕步）。"""
+    return _write_verb(args, "freeze", Params())
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     return _write_verb(args, "start", Params())
 
@@ -1269,6 +1274,7 @@ def build_parser() -> argparse.ArgumentParser:
         deps={"nargs": "*", "default": None},
     )
     add_write("claim-dev", cmd_claim_dev)
+    add_write("freeze", cmd_freeze)
     add_write("start", cmd_start)
     add_write(
         "deliver",

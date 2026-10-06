@@ -61,7 +61,10 @@ def check_gates(
     rej: list[Rejection] = []
 
     # 闸 1
-    if task.status not in {TaskState.DELIVERED, TaskState.VERIFIED}:
+    # ACCEPTED 也要放行：验收是"决定"，合并是"动作"——若只放行交付/已核，
+    # 先 accept 再合并的路会被堵死（2026-10-05 全流程实测抓到的堵点）。
+    # 反过来"验收了却没合"由 audit 的 E_ACCEPTED_UNMERGED 点名。
+    if task.status not in {TaskState.DELIVERED, TaskState.VERIFIED, TaskState.ACCEPTED}:
         rej.append(
             Rejection(
                 Code.E_NOT_DELIVERED,

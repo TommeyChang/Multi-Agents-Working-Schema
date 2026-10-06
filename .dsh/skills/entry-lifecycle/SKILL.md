@@ -14,8 +14,10 @@ description: 条目从登记到验收的九步生命周期：每步谁做、前�
 | `freeze` | PM／TL／commander | 已定稿 | 固化范围与验收快照；**认领即冻结**，此后改动走新条目 |
 | `claim-dev` | TL | 已定稿且**就绪** | 未批预算 ⇒ 拒（先 `coord quota --line <线> --budget N`） |
 | `start` → `deliver` | TL（认领人） | — | deliver 只记证据，**不产生 ✅** |
-| `verify` | PM | 已交付 | 证据形式与可读性先过 |
+| `verify` | **TL／commander** | 已交付 | 证据形式与可读性先过（不是 PM——别记错） |
 | `accept` | PM | **已验证** | 实质验收；**功能条目必须有闭环路径**（`closure` 验收项） |
+
+**合入的位置**：`merge-request` 放行 delivered／verified／accepted 三态——先验收再合并**不再被堵**（2026-10-05 实测抓到的堵点）；但**验收了却没合**会被 `coord audit` 点名（`E_ACCEPTED_UNMERGED`）。
 | `block`／`unblock` | 相关角色 | 非终态 | 须给理由；`blocked_from` 记录回退目标 |
 
 ## 常见拒码怎么解

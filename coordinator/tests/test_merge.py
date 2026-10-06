@@ -345,3 +345,38 @@ def test_chain_gate_fails_closed_without_judgement(tmp_path: Path) -> None:
     assert not r.ok
     assert r.event is not None
     assert "E_INCOMPLETE" in r.event.result, r.event.result
+
+
+def test_accepted_task_can_still_merge(tmp_path: Path) -> None:
+    """**堵点回归**：先验收（ACCEPTED）再合并必须可行——验收是决定，合并是动作。
+
+    2026-10-05 全流程实测：闸只放行 delivered/verified ⇒ 先 accept 的任务再也合不进去。
+    """
+    from conftest import budgeted  # noqa: E402
+
+    from bg_coordinator.engine import State
+    from bg_coordinator.models import (
+        AcceptanceItem,
+        AcceptanceType,
+        Evidence,
+        Kind,
+        Task,
+        TaskState,
+    )
+
+
+    _ev = tmp_path / "gate.log"
+    _ev.write_text("green\n", encoding="utf-8")
+    s = budgeted(State())
+    s.tasks["T-D-9"] = Task(
+        id="T-D-9", kind=Kind.T, line="D", status=TaskState.ACCEPTED, owner="TL-D",
+        acceptance=[AcceptanceItem(type=AcceptanceType.CLOSURE, desc="入口 → 可观测")],
+        whitelist=["auth/**"], frozen=[],
+        evidence=[Evidence(round=1, commit="abc123", gate_cmd="pytest -q", gate_exit=0,
+                           evidence_path=str(_ev))],
+    )
+    r = _req(  # _req 自带"链位通过"桩——这里测的是状态闸，不是迁移判据
+        s, task_id="T-D-9", branch="dev/x", commit="abc123", requester="tech-lead:TL-D:D",
+        changed_files=["auth/x.py"], base_commit="", main_head="",
+    )
+    assert r.ok, f"ACCEPTED 应可入队，却被拒：{r.rejection}"

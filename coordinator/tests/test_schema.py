@@ -255,3 +255,19 @@ def test_reply_style_is_single_sourced_and_referenced() -> None:
         or "AGENT.md" not in p.read_text(encoding="utf-8")
     ]
     assert not missing, f"这些角色文件没有指向回复风格：{missing}"
+
+
+def test_every_state_verb_has_a_cli_entry() -> None:
+    """**跑全流程抓到的洞**：`freeze` 在状态机里、CLI 里却没有 ⇒ 那条路根本走不到。
+
+    判据：状态机声明的每个写动词，都要能从 CLI 进到（允许少量已知别名）。
+    """
+    from bg_coordinator.cli import build_parser
+    from bg_coordinator.statemachine import TRANSITIONS
+
+    sub = next(a for a in build_parser()._actions if getattr(a, "choices", None))
+    cli_verbs = set(sub.choices)
+    aliases = {"priority": "set-priority"}  # CLI 名 → 状态机动词
+    cli_verbs |= set(aliases.values())  # 别名也算可达
+    missing = sorted(set(TRANSITIONS) - cli_verbs)
+    assert not missing, f"状态机有但 CLI 无入口：{missing}——那条路用户走不到"

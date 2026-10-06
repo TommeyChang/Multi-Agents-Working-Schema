@@ -535,6 +535,26 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
             )
         )
 
+    # 11.12 **已验收却从未合入**——验收是"决定"，合并是"动作"；
+    #       只决定不动作，代码就永远不在主干上（用户以为做完了）。
+    from .models import MergeState
+    from .models import TaskState as _TS
+
+    merged_tasks = {
+        m.task_id for m in state.merges.values() if m.state == MergeState.MERGED
+    }
+    for t in sorted(state.tasks.values(), key=lambda x: x.id):
+        if t.status == _TS.ACCEPTED and t.id not in merged_tasks:
+            out.append(
+                Anomaly(
+                    Code.E_ACCEPTED_UNMERGED,
+                    t.id,
+                    "已验收但没有任何一条合入记录——代码不在主干上",
+                    owner=t.owner or "tech-lead",
+                    hint="走 `merge-request`（六道闸）→ `merge-next` → `merge-ok` 把它合上",
+                )
+            )
+
     # 12. 合并队列里的冲突拒绝项 → 转 TL 动作项
     from .models import MergeState
 

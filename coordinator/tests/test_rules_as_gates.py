@@ -179,3 +179,23 @@ def test_dispatch_tally_survives_replay(tmp_path: Path) -> None:
     rebuilt = store.replay()
     assert rebuilt.dispatch_tally == {"tech-lead:TL": 1}
     assert store.verify_cache(rebuilt) == []
+
+
+def test_audit_flags_accepted_but_never_merged() -> None:
+    """**漏洞回归**：验收了却没合并 ⇒ 用户以为做完了，代码其实不在主干。"""
+    from bg_coordinator.audit import audit
+    from bg_coordinator.engine import State
+    from bg_coordinator.errors import Code
+    from bg_coordinator.models import MergeRequest, MergeState, Task, TaskState
+
+    s = budgeted(State())
+    s.tasks["T-D-1"] = Task(id="T-D-1", kind=Kind.T, line="D", status=TaskState.ACCEPTED,
+                            owner="TL-D")
+    hits = [a for a in audit(s) if a.code == Code.E_ACCEPTED_UNMERGED]
+    assert [a.id for a in hits] == ["T-D-1"], "验收未合入没被点名"
+
+    # 有合入记录即销
+    s.merges["M-1"] = MergeRequest(merge_id="M-1", task_id="T-D-1", branch="dev/x",
+                                   commit="abc", requester="tech-lead:TL-D:D",
+                                   state=MergeState.MERGED)
+    assert not [a for a in audit(s) if a.code == Code.E_ACCEPTED_UNMERGED]
