@@ -13,11 +13,11 @@ from conftest import budgeted  # noqa: E402
 
 from bg_coordinator.engine import Params, State, apply
 from bg_coordinator.models import (
+    AcceptanceItem,
+    AcceptanceType,
     Actor,
     Kind,
     Line,
-    AcceptanceItem,
-    AcceptanceType,
     MergeRequest,
     MergeState,
     Origin,
@@ -48,8 +48,7 @@ def _to(state: State, tid: str, upto: str) -> State:
     if upto == "defined":
         return s
     s.quota = Quota(enabled=True, per_line={"D": 3})
-    s = apply(s, "claim-dev", tid, _tl()).state
-    return s
+    return apply(s, "claim-dev", tid, _tl()).state
 
 
 def _reg(state: State, title: str, origin: Origin = Origin.LINE) -> tuple[State, str]:
@@ -130,7 +129,25 @@ def test_commander_plan_surfaces_expired_leases_and_conflicts() -> None:
 def _mk_evidence():
     import tempfile
 
-    f = tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False)
-    f.write("green\n")
-    f.close()
-    return Path(f.name)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
+        f.write("green\n")
+        return Path(f.name)
+
+
+def test_po_lane_prioritizes_unprioritized_and_blocked() -> None:
+    """**PO 的作为**：未定优先级的条目与阻塞中的条目，都该出现在 PO 的计划里。
+
+    未定优先级 ⇒ 就绪判据永远挡住 ⇒ 如果调度器不把它派给 PO，这条目会**静默卡死**。
+    """
+    from bg_coordinator.models import Task
+
+    s = budgeted(State())
+    s, t1 = _reg(s, "定了优先级")          # register 带了 P1
+    s2 = s
+    s2.tasks[t1].priority = None            # 模拟未定优先级
+    s2.tasks["T-D-7"] = Task(id="T-D-7", kind=Kind.T, line="D", status=TaskState.BLOCKED,
+                             title="阻塞中")
+    acts = {(a.verb, a.task_id) for a in plan_role(s2, Role.PO, "D")}
+    assert ("priority", t1) in acts, "未定优先级的条目没进 PO 计划"
+    assert ("unblock", "T-D-7") in acts, "阻塞条目没进 PO 计划"
+    assert not [a for a in plan_role(s2, Role.PO, "D") if a.task_id == t1 and a.verb != "priority"]

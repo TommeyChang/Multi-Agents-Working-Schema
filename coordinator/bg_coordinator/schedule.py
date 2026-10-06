@@ -13,8 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .engine import State, active_grants
-from .models import MergeState, Role, Task, TaskState
+from .models import TERMINAL_STATES, MergeState, Role, Task, TaskState
 from .readiness import ready_tasks
+
+_NON_TERMINAL = frozenset(s for s in TaskState if s not in TERMINAL_STATES)
 
 
 @dataclass
@@ -57,6 +59,15 @@ def plan_role(state: State, role: Role, line: str, now: float = 0.0) -> list[Act
         queued = [m for m in state.merges.values() if m.state == MergeState.QUEUED]
         if queued and not running:
             out.append(Action("merge-next", queued[0].merge_id, "合并队列有队首且无在办合并"))
+    elif role is Role.PO:
+        # PO 的两个真职责：**定优先级**（不定优先级 ⇒ 永远不就绪，谁也接不走）
+        # 与**阻塞仲裁**（block/unblock）。这两件不派出去，口子就一直开着。
+        for t in _by_priority(tasks):
+            if t.status == TaskState.BLOCKED:
+                out.append(Action("unblock", t.id, "阻塞中，待仲裁或解除"))
+            elif t.status in _NON_TERMINAL and not (t.priority or "").strip():
+                out.append(Action("priority", t.id,
+                                  "未定优先级——不定就永远不就绪（就绪判据会挡住所有人）"))
     elif role is Role.COMMANDER:
         from .models import LeaseState
 
@@ -73,5 +84,5 @@ def plan(state: State, line: str, now: float = 0.0) -> dict[str, list[Action]]:
     """全角色计划——`coord schedule` 的数据面。"""
     return {
         role.value: plan_role(state, role, line, now)
-        for role in (Role.PM, Role.TECH_LEAD, Role.COMMANDER)
+        for role in (Role.PO, Role.PM, Role.TECH_LEAD, Role.COMMANDER)
     }
