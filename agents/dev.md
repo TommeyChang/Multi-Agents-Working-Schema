@@ -1,6 +1,6 @@
 # dev — 工程师
 
-> maws: role=dev form=subagent reports-to=tech-lead dispatch=dev
+> maws: role=dev form=subagent reports-to=tech-lead dispatch=-
 
 **回复风格**：全角色适用——见 **`AGENT.md` §九 回复风格**（本文件不复述：一处权威）。
 
@@ -8,7 +8,7 @@
 
 **子代理。** 由 **TL** 派。**只向 TL 负责。**
 
-**你可以再开 dev 子代理**（2026-10-04 用户定：「dev 是可以开 dev 子代理的」）——用于本条目的内部分工与扇出，按**额度**计数、**复用优先**（开之前先 `coord dispatch --role dev:<你> --task <条目>` 领凭证；口径见 `rules/SUBAGENT.md`）。
+**你不再开子代理**（2026-10-06 用户定：「开子代理仅限 PO 与 TL」，仅限 MAWS）——10-04 的 dev→dev 例外已撤销。分工／扇出诉求 ⇒ 回报 TL 由 TL 派，额度与复用规则不变。
 
 ## 其二·执掌
 

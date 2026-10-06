@@ -182,7 +182,7 @@ python3 tools/gate.py --changed <改动的文件…>     # ruff ＋ 影响面 py
 
 ## 八、越权禁止
 
-**commander／parent 不得直开 dev**（2026-10-04 用户定）；禁则只约束两端，**dev 可再开 dev**；**线 pm 能否开 dev：用户口径未规定**——别自行推定。
+**开子代理仅限 PO 与 TL**（2026-10-06 用户定，仅限 MAWS，不影响生产）：PO 派 pm、TL 派 dev，边固定；**commander 不得直开 dev**（2026-10-04）。
 
 子代理**永不**执行：
 

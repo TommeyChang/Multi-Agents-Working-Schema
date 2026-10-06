@@ -155,10 +155,9 @@ ROLES: tuple[RoleSpec, ...] = (
         key=Role.DEV.value,
         form="subagent",
         reports_to="tech-lead",
-        # **dev 可再开 dev**（2026-10-04 用户定：「dev 是可以开 dev 子代理的」）：
-        # 用于本条目内的分工／扇出，按额度计数（⑧）。这是**唯一的子代理派单权**——
-        # pm 等其它子代理仍不得自开；commander／parent 不得直开 dev。
-        dispatch=("dev",),
+        # 2026-10-06 用户定：**开子代理仅限 PO 与 TL**（仅限 MAWS，不影响生产）——
+        # 撤销 10-04 的「dev 可再开 dev」例外；dev 只做实现，不再派单。
+        dispatch=(),
         brief="实现 ＋ 测试 ＋ 门禁；永不 merge/push、不改任务数据",
         workface=("本线工作面（见工程绑定 §线别与工作面）",),
     ),
@@ -377,18 +376,23 @@ def reconcile() -> SchemaReport:
             if role not in role_keys:
                 drifts.append(Drift("role-unknown", f"{verb} 允许未登记的角色 {role}"))
 
-    # ③ **子代理默认不得自开**，例外只有一处：`dev` 可再开 `dev`
-    #    （2026-10-04 用户定「dev 是可以开 dev 子代理的」）。
-    #    以前这是一条结构禁令（子代理一律无派单权）；用户后来用**额度／复用／空转**
-    #    三处控制取代了它，故口径改为"默认不许 + 显式例外"——例外写死在下面这一处，
-    #    免得"谁都能派"从后门长回来。
+    # ③ **子代理一律不得自开**（2026-10-06 用户定：开子代理仅限 PO 与 TL，
+    #    仅限 MAWS，不影响生产）——10-04 的「dev 可再开 dev」例外已撤销。
+    #    额度／复用／空转三处控制照旧在，但它们管的是"开多少"，不是"谁能开"。
     for r in ROLES:
-        if r.form != "subagent" or not r.can_dispatch:
-            continue
-        if r.key != Role.DEV.value:
+        if r.form == "subagent" and r.can_dispatch:
             drifts.append(Drift("subagent-dispatch", f"{r.key} 是子代理却声明了派单权"))
-        elif set(r.dispatch) != {Role.DEV.value}:
-            drifts.append(Drift("subagent-dispatch", f"{r.key} 的子代理派单权只许是 dev：{r.dispatch}"))
+    #    有派单权的只能是这两位，且边固定：PO→pm，TL→dev
+    _DISPATCH_RIGHTS = {Role.PO.value: {Role.PM.value}, "tech-lead": {Role.DEV.value}}
+    for r in ROLES:
+        if not r.can_dispatch:
+            continue
+        allowed = _DISPATCH_RIGHTS.get(r.key)
+        if allowed is None:
+            drifts.append(Drift("dispatch-rights", f"{r.key} 有派单权——仅限 PO 与 TL（10-06 用户定）"))
+        elif set(r.dispatch) != allowed:
+            drifts.append(Drift("dispatch-rights", f"{r.key} 的派单边只许是 {sorted(allowed)}：{r.dispatch}"))
+
     #    另一端同一口径：**commander 不得直开 dev**（10-04 用户定） ⇒ 必须有角色能派 dev
     if not any(Role.DEV.value in r.dispatch for r in ROLES):
         drifts.append(Drift("dev-unreachable", "没有任何角色能派 dev——实现体就没人能开了"))
