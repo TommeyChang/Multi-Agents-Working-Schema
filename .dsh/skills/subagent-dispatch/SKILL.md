@@ -20,6 +20,8 @@ description: 开子代理的规则：一次性的是「交办」、代理可跨�
 新开只在四种情形：①已终止不可续；②职能须独立；③并行扇出且白名单不重叠；④上下文不可混（须给理由）。
 
 ## 第 2 步：领凭证（只在新开时）
+
+**谁能开**：commander／PO／TL／dba／ops（边固定，见 `rules/SUBAGENT.md` §一·五）；pm 与 dev 不能。
 ```bash
 coord dispatch --role <派单方 role:name:line> --task <条目号>
 ```
