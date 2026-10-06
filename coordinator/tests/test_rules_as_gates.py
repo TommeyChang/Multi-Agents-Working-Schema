@@ -211,3 +211,26 @@ def test_audit_flags_accepted_but_never_merged() -> None:
                                    commit="abc", requester="tech-lead:TL-D:D",
                                    state=MergeState.MERGED)
     assert not [a for a in audit(s) if a.code == Code.E_ACCEPTED_UNMERGED]
+
+
+def test_terminal_task_holding_grant_is_flagged() -> None:
+    """终态条目不得持有在手凭证（2026-10-06 用户定：收窄版——只点终态）。"""
+    import time as _time
+
+    from bg_coordinator.audit import audit
+    from bg_coordinator.engine import State, grant_dispatch
+    from bg_coordinator.errors import Code
+    from bg_coordinator.models import Kind, Task, TaskState
+
+    s = budgeted(State())
+    s.tasks["T-D-1"] = Task(id="T-D-1", kind=Kind.T, line="D", status=TaskState.ACCEPTED,
+                            owner="TL-D")
+    r = grant_dispatch(s, holder="tech-lead:TL-D:D", task_id="T-D-1", line="D",
+                       clock=_time.time(), ttl=3600)
+    assert r.ok, r.rejection
+    hits = [a for a in audit(r.state) if a.code == Code.E_GRANT_AFTER_DONE]
+    assert hits and hits[0].id == r.state.leases[next(iter(r.state.leases))].lease_id
+
+    # 收窄的另一半：非终态（在办）持证 ⇒ 不点
+    r.state.tasks["T-D-1"].status = TaskState.IN_PROGRESS
+    assert not [a for a in audit(r.state) if a.code == Code.E_GRANT_AFTER_DONE]

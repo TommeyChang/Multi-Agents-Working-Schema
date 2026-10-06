@@ -33,6 +33,7 @@ class Code(StrEnum):
     E_NO_CLOSURE_PATH = "E_NO_CLOSURE_PATH"  # 功能条目没有闭环路径（只有模块单测）
     E_SCOPE_MISSING = "E_SCOPE_MISSING"  # 交付没申报测试级别（分级口径无从核）
     E_ACCEPTED_UNMERGED = "E_ACCEPTED_UNMERGED"  # 已验收但从未合入主干（代码没落地）
+    E_GRANT_AFTER_DONE = "E_GRANT_AFTER_DONE"  # 终态条目仍持有在手凭证（该销账了）
     E_DOC_UNSYNCED = "E_DOC_UNSYNCED"  # 设计面动了但文档未同批
     E_DUP_ID = "E_DUP_ID"
     E_BAD_LINE = "E_BAD_LINE"

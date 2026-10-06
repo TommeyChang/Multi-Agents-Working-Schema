@@ -120,10 +120,9 @@ ROLES: tuple[RoleSpec, ...] = (
         key=Role.COMMANDER.value,
         form="independent",
         reports_to="user",
-        # **不直开 dev**（2026-10-04 用户定：「你不允许直开 dev」）：
-        # commander 的正当动作止于立案行／冻结口径／取号／合入／推送／台账对账；
-        # 实现需求只产出「条目 ＋ 口径 ＋ 派单建议」，执行体由用户安排的 dev 会话承接。
-        dispatch=(),
+        # 2026-10-06 用户定：commander 也可以开子代理——但**仍不直开 dev**（10-04 口径保留），
+        # 边固定为 commander→po（pm 与 dev 无派单权）。
+        dispatch=("po",),
         brief="用户接口 ＋ git 机制层 ＋ 最终仲裁",
         workface=("git worktree/分支/合并/推送", "主检出守护", "仲裁", "override"),
     ),
@@ -383,13 +382,18 @@ def reconcile() -> SchemaReport:
         if r.form == "subagent" and r.can_dispatch:
             drifts.append(Drift("subagent-dispatch", f"{r.key} 是子代理却声明了派单权"))
     #    有派单权的只能是这两位，且边固定：PO→pm，TL→dev
-    _DISPATCH_RIGHTS = {Role.PO.value: {Role.PM.value}, "tech-lead": {Role.DEV.value}}
+    _DISPATCH_RIGHTS = {
+        Role.COMMANDER.value: {Role.PO.value},
+        Role.PO.value: {Role.PM.value},
+        "tech-lead": {Role.DEV.value},
+    }
     for r in ROLES:
         if not r.can_dispatch:
             continue
         allowed = _DISPATCH_RIGHTS.get(r.key)
         if allowed is None:
-            drifts.append(Drift("dispatch-rights", f"{r.key} 有派单权——仅限 PO 与 TL（10-06 用户定）"))
+            drifts.append(Drift("dispatch-rights",
+                             f"{r.key} 有派单权——仅限 commander／PO／TL（10-06）"))
         elif set(r.dispatch) != allowed:
             drifts.append(Drift("dispatch-rights", f"{r.key} 的派单边只许是 {sorted(allowed)}：{r.dispatch}"))
 

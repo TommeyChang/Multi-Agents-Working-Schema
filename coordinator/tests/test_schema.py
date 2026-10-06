@@ -54,9 +54,10 @@ def test_only_po_and_tl_may_dispatch() -> None:
     撤销了 10-04 的「dev 可再开 dev」例外：dev 只做实现，不再派单。
     """
     by_key = {r.key: r for r in ROLES}
+    assert by_key["commander"].dispatch == ("po",), "commander 只能派 po（不直开 dev 保留）"
     assert by_key["po"].dispatch == ("pm",), "PO 只能派 pm"
     assert by_key["tech-lead"].dispatch == ("dev",), "TL 只能派 dev"
-    for key in ("commander", "pm", "dev", "ops", "dba"):
+    for key in ("pm", "dev", "ops", "dba"):
         assert by_key[key].dispatch == (), f"{key} 不应有派单权（10-06 用户定）"
     assert not reconcile().drifts, [f"{d.kind}: {d.detail}" for d in reconcile().drifts]
 

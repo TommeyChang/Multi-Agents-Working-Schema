@@ -13,9 +13,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .engine import State, pid_alive
+from .engine import SUBAGENT_KLASS, State, pid_alive
 from .errors import Code
-from .models import Event, Kind, LeaseState, Origin, Task, TaskState
+from .models import TERMINAL_STATES, Event, Kind, LeaseState, Origin, Task, TaskState
 from .validators import deps_all_terminal, deps_missing, rule_8b_evidence_readable, whitelist_covers
 
 # ---------------------------------------------------------------------------
@@ -559,6 +559,25 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
                     "已验收但没有任何一条合入记录——代码不在主干上",
                     owner=t.owner or "tech-lead",
                     hint="走 `merge-request`（六道闸）→ `merge-next` → `merge-ok` 把它合上",
+                )
+            )
+
+    # 11.13 **终态条目仍持有在手凭证**（2026-10-06 用户定："先收窄一点"）。
+    #
+    #       只点**终态**（accepted）——在办/已验证的条目可能还在收尾，不点，
+    #       免得把正当的在手凭证也报成异常（假红比没闸更坏）。
+    for ls in state.leases.values():
+        if ls.klass != SUBAGENT_KLASS or ls.state != LeaseState.ACTIVE or not ls.task:
+            continue
+        t = state.tasks.get(ls.task)
+        if t is not None and t.status in TERMINAL_STATES:
+            out.append(
+                Anomaly(
+                    Code.E_GRANT_AFTER_DONE,
+                    ls.lease_id,
+                    f"条目 {ls.task} 已终态，凭证仍在 {ls.holder} 手上——该销账了",
+                    owner=ls.holder,
+                    hint=f"`coord release --id {ls.lease_id}`；终态条目不派活，凭证不该留着",
                 )
             )
 

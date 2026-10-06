@@ -40,7 +40,7 @@ RULINGS: tuple[tuple[str, str, str], ...] = (
     ("不直开 dev", "agents/commander.md", "coordinator/bg_coordinator/schema.py"),
     ("不得直开 dev", "rules/SUBAGENT.md", "coordinator/bg_coordinator/schema.py"),
     # —— 开子代理仅限 PO 与 TL（2026-10-06，仅限 MAWS；**撤销** 10-04 的 dev→dev 例外）
-    ("开子代理仅限 PO 与 TL", "rules/SUBAGENT.md", "coordinator/bg_coordinator/schema.py"),
+    ("开子代理仅限 commander／PO／TL", "rules/SUBAGENT.md", "coordinator/bg_coordinator/schema.py"),
     # —— 线 pm 能否开 dev（2026-10-04 未规定 → **2026-10-06 已裁定：不能**，
     #    开子代理仅限 PO 与 TL）——原"未规定"留痕随裁定失效，撤行以记变迁。
     # —— 子代理三条（2026-10-02~04）

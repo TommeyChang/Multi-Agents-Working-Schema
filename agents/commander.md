@@ -1,6 +1,6 @@
 # commander — 工程经理
 
-> maws: role=commander form=independent reports-to=user dispatch=-
+> maws: role=commander form=independent reports-to=user dispatch=po
 
 **回复风格**：全角色适用——见 **`AGENT.md` §九 回复风格**（本文件不复述：一处权威）。
 

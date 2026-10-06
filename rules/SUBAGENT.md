@@ -36,6 +36,7 @@
 **是累计，不是「在手」**（2026-10-04 用户口径：「一个对话开启的子代理总数不得超过 10 个」）：
 销账**不重置**——否则「开一个、销一个、再开」可以无限循环，那不是闸。
 判据：`state.dispatch_tally`（进事件面，重放可还原）；`coord grants` 两个数都列，闸看累计。
+**终态条目必须销账**（2026-10-06 用户定，收窄版）：条目进终态后凭证必须释放；滞留 ⇒ audit 点名。
 
 - **这是协调器里的计数，不是自报**：`coord grants` 是唯一答案；超上限时 `coord dispatch` 直接拒
   （`E_UNAUTHORIZED_DISPATCH`）；
@@ -182,7 +183,7 @@ python3 tools/gate.py --changed <改动的文件…>     # ruff ＋ 影响面 py
 
 ## 八、越权禁止
 
-**开子代理仅限 PO 与 TL**（2026-10-06 用户定，仅限 MAWS，不影响生产）：PO 派 pm、TL 派 dev，边固定；**commander 不得直开 dev**（2026-10-04）。
+**开子代理仅限 commander／PO／TL**（2026-10-06 用户定，仅限 MAWS，不影响生产）：commander 派 po、PO 派 pm、TL 派 dev，**边固定**；pm 与 dev 无派单权；**commander 不得直开 dev**（2026-10-04 口径保留）。
 
 子代理**永不**执行：
 
