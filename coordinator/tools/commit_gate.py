@@ -90,6 +90,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -393,6 +394,38 @@ def _fail(code: int, message: str, emit_json: bool, task: str = "") -> int:
     return code
 
 
+_ENTRY_ID_RE = re.compile(r"\b[A-Z]{1,4}(?:-[A-Z]{1,4})?-\d+\b")
+
+
+def multi_entry_warns(repo: Path, range_spec: str) -> list[Finding]:
+    """**提交粒度**（2026-10-06 用户定）：一条提交引用超过一个条目号 ⇒ WARN。
+
+    开发可以拆碎并行，但**提交是共享 git 上的串行动作**——一次提交只该承载一个条目的面。
+    只在 `--range`（事后审）模式下判：staged 阶段还没有提交信息，无从引用条目号。
+    """
+    out: list[Finding] = []
+    try:
+        revs = subprocess.run(
+            ["git", "-C", str(repo), "rev-list", range_spec],
+            capture_output=True, text=True, check=True,
+        ).stdout.split()
+        for sha in revs:
+            msg = subprocess.run(
+                ["git", "-C", str(repo), "show", "-s", "--format=%B", sha],
+                capture_output=True, text=True, check=True,
+            ).stdout
+            ids = sorted(set(_ENTRY_ID_RE.findall(msg)))
+            if len(ids) > 1:
+                out.append(Finding(
+                    WARN,
+                    f"commit {sha[:8]}",
+                    f"一条提交引用了 {len(ids)} 个条目号（{'、'.join(ids)}）——提交粒度：一条提交一个条目",
+                ))
+    except (OSError, subprocess.CalledProcessError):
+        pass  # 读不到提交信息 ⇒ 不判（判不了就不当罪名）
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     """命令行入口；返回退出码（0 通过／1 有 BLOCK／2 用法或环境错误）。"""
     raw = list(sys.argv[1:] if argv is None else argv)
@@ -450,6 +483,8 @@ def main(argv: list[str] | None = None) -> int:
         return _fail(2, f"git diff 失败：{git_err or '（无 stderr）'}", want_json, task=args.task)
 
     verdict = judge(args.task, task, files, repo)
+    if args.range_spec:
+        verdict.warns.extend(multi_entry_warns(repo, args.range_spec))
     if args.json:
         print(json.dumps(_payload(verdict), ensure_ascii=False))
     else:

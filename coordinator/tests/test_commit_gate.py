@@ -627,3 +627,37 @@ def test_unknown_constraint_is_rejected_at_define(
     capsys.readouterr()
     assert code == 1
     assert "未知约束" in err, err
+
+
+def test_commit_referencing_two_entries_warns(tmp_path: Path, capsys) -> None:
+    """**提交粒度**（2026-10-06 用户定）：一条提交引用超过一个条目号 ⇒ WARN（不阻断）。"""
+    root = tmp_path / "coordinator"
+    tid = _new_task(root, whitelist=["data_access/**"], frozen=[])
+    repo = _init_repo(tmp_path)
+    _stage(repo, "data_access/base.py")
+    _git(repo, "commit", "-q", "-m", "T-D-1 与 T-D-2 一起改——两个条目揉成一条提交")
+
+    code = _run(root, tid, repo, "--range", "HEAD~1..HEAD")
+    out = capsys.readouterr().out
+    assert code == 0, f"WARN 不阻断：{out}"
+    assert "WARN commit" in out and "2 个条目号" in out
+
+
+def test_single_entry_commit_does_not_warn(tmp_path: Path, capsys) -> None:
+    """一条提交一个条目号 ⇒ 不报（粒度判据只点跨条目的提交）。"""
+    root = tmp_path / "coordinator"
+    tid = _new_task(root, whitelist=["data_access/**"], frozen=[])
+    repo = _init_repo(tmp_path)
+    _stage(repo, "data_access/base.py")
+    _git(repo, "commit", "-q", "-m", "T-D-1：补日历缓存")
+
+    code = _run(root, tid, repo, "--range", "HEAD~1..HEAD")
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "条目号" not in out
+
+    # staged 模式没有提交信息 ⇒ 这条不判
+    _stage(repo, "data_access/next.py")
+    code2 = _run(root, tid, repo)
+    out2 = capsys.readouterr().out
+    assert code2 == 0 and "条目号" not in out2
