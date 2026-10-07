@@ -50,7 +50,7 @@ RULINGS: tuple[tuple[str, str, str], ...] = (
     #    开子代理仅限 PO 与 TL）——原"未规定"留痕随裁定失效，撤行以记变迁。
     # —— 子代理三条（2026-10-02~04）
     ("复用", "rules/SUBAGENT.md", "coordinator/bg_coordinator/engine.py"),
-    ("空转必报", "rules/SUBAGENT.md", TEXT),
+    ("空转必报", "rules/SUBAGENT.md", "coordinator/bg_coordinator/audit.py"),
     ("线间不设串行闸", "rules/SUBAGENT.md", TEXT),
     # —— 累计派单上限（2026-10-04）：文字说累计、工具算在办 ⇒ 已改成闸
     ("是累计，不是「在手」", "rules/SUBAGENT.md", "coordinator/tests/test_rules_as_gates.py"),

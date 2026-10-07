@@ -18,6 +18,10 @@ from .errors import Code
 from .models import TERMINAL_STATES, Event, Kind, LeaseState, Origin, Task, TaskState
 from .validators import deps_all_terminal, deps_missing, rule_8b_evidence_readable, whitelist_covers
 
+#: 空转嫌疑阈值：凭证在手超过它、任务仍停在在办 ⇒ 点名排查。
+#: 依据：一轮实现＋门禁实测 ≤1h，2h 是"该回报了"的线（嫌疑，不是罪名线）。
+IDLE_GRANT_SECONDS = 2 * 3600.0
+
 # ---------------------------------------------------------------------------
 # 上下文边界（设计稿 §10「读命令必须有界」）
 # ---------------------------------------------------------------------------
@@ -580,6 +584,32 @@ def audit(state: State, events: list[Event] | None = None, clock: float = 0.0) -
                     hint=f"`coord release --id {ls.lease_id}`；终态条目不派活，凭证不该留着",
                 )
             )
+
+    # 11.14 **空转嫌疑**（2026-10-06 用户定："子代理要管起来"）。
+    #
+    #       协调器看不到子代理的文件改动，但看得到**事件面**：
+    #       凭证在手超过阈值、任务仍停在在办 ⇒ 该回报了。这是**嫌疑不是罪名**
+    #       （合法的长任务也会被点）——点名让派单方去查，不是判死。
+    if clock:
+        for ls in state.leases.values():
+            if ls.klass != SUBAGENT_KLASS or ls.state != LeaseState.ACTIVE or not ls.task:
+                continue
+            t = state.tasks.get(ls.task)
+            if t is None or t.status in TERMINAL_STATES:
+                continue  # 终态持证由 E_GRANT_AFTER_DONE 管，不重复点
+            age = clock - ls.created_at
+            if age > IDLE_GRANT_SECONDS:
+                out.append(
+                    Anomaly(
+                        Code.E_SUBAGENT_IDLE,
+                        ls.lease_id,
+                        f"凭证在手 {int(age // 3600)}h、任务 {ls.task} 仍停在 {t.status.value}"
+                        "——空转嫌疑",
+                        owner=ls.holder,
+                        hint="回报进度（写明本轮做了什么），或释放凭证销账；"
+                             "零产物的一律报根因并计入额度",
+                    )
+                )
 
     # 12. 合并队列里的冲突拒绝项 → 转 TL 动作项
     from .models import MergeState

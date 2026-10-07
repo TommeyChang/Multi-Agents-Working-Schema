@@ -272,3 +272,30 @@ def test_complete_requires_note_and_released_grants() -> None:
     assert g2.ok, g2.rejection
     r3 = apply(g2.state, "complete", "OPS-1", _ops(), params=_P(reason="已执行留痕"))
     assert r3.ok, r3.rejection
+
+
+def test_idle_grant_is_flagged_but_fresh_or_terminal_is_not() -> None:
+    """空转嫌疑（2026-10-06 用户定）：凭证在手超 2h、任务仍在办 ⇒ 点名排查。"""
+    import time as _time
+
+    from bg_coordinator.audit import IDLE_GRANT_SECONDS, audit
+    from bg_coordinator.engine import State, grant_dispatch
+    from bg_coordinator.errors import Code
+    from bg_coordinator.models import Kind, Task, TaskState
+
+    now = _time.time()
+    s = budgeted(State())
+    s.tasks["T-D-1"] = Task(id="T-D-1", kind=Kind.T, line="D",
+                            status=TaskState.IN_PROGRESS, owner="TL-D")
+    g = grant_dispatch(s, holder="tech-lead:TL-D:D", task_id="T-D-1", line="D",
+                       clock=now - IDLE_GRANT_SECONDS - 60, ttl=86400)
+    assert g.ok, g.rejection
+    hits = [a for a in audit(g.state, clock=now) if a.code == Code.E_SUBAGENT_IDLE]
+    assert hits, "超时未进展没被点名"
+
+    # 刚领的 ⇒ 不点
+    assert not [a for a in audit(g.state, clock=now - IDLE_GRANT_SECONDS + 60)
+                if a.code == Code.E_SUBAGENT_IDLE]
+    # 终态持证由 E_GRANT_AFTER_DONE 管，空转不重复点
+    g.state.tasks["T-D-1"].status = TaskState.ACCEPTED
+    assert not [a for a in audit(g.state, clock=now) if a.code == Code.E_SUBAGENT_IDLE]
