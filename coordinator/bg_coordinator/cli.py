@@ -275,15 +275,43 @@ def cmd_claim_analyze(args: argparse.Namespace) -> int:
     return _write_verb(args, "claim-analyze", Params())
 
 
+def _needs_migration_req(repo: Path | None, whitelist: list[str]) -> bool:
+    """白名单是否触及绑定 §迁移 的 `dir`（信号只负责"要不要查"）。"""
+    if not whitelist:
+        return False
+    try:
+        from .binding import load as _load_binding
+        from .testplan import locate_testplan
+
+        path = locate_testplan(repo)
+        data, _err = _load_binding(path) if path else ({}, "")
+        mig_dir = str((data or {}).get("migrations", {}).get("dir") or "").strip("/")
+    except Exception:  # noqa: BLE001 —— 取不到绑定 ⇒ 不查（判不了就不当罪名）
+        return False
+    if not mig_dir:
+        return False
+    return any(
+        w.lstrip("./") == mig_dir or w.lstrip("./").startswith(mig_dir + "/")
+        or w.lstrip("./").rstrip("*").rstrip("/") == mig_dir
+        for w in whitelist
+    )
+
+
 def cmd_define(args: argparse.Namespace) -> int:
     frozen = _flat(args.frozen)
+    whitelist = _flat(args.whitelist)
     p = Params(
         title=args.title or "",
-        whitelist=_flat(args.whitelist),
+        whitelist=whitelist,
         frozen=frozen,
         acceptance=_acceptance_items(args),
         constraints=_flat(getattr(args, "constraint", None)) or None,
         deps=_flat(args.deps) or None,
+        migration_req=getattr(args, "migration_req", "") or "",
+        needs_migration_req=_needs_migration_req(
+            Path(getattr(args, "repo", "") or "") if getattr(args, "repo", "") else None,
+            whitelist,
+        ),
     )
     return _write_verb(args, "define", p)
 
@@ -1312,6 +1340,7 @@ def build_parser() -> argparse.ArgumentParser:
         acceptance={"nargs": "*", "default": []},
         constraint={"nargs": "*", "default": None},
         deps={"nargs": "*", "default": None},
+        migration_req={"default": ""},
     )
     add_write("claim-dev", cmd_claim_dev)
     add_write("freeze", cmd_freeze)

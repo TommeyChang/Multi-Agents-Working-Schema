@@ -47,6 +47,7 @@ from .validators import (
     rule_6_whitelist_exclusive,
     rule_8_evidence_form,
     rule_8b_evidence_readable,
+    rule_migration_req,
     validate_acceptance,
     whitelist_covers,
 )
@@ -82,6 +83,11 @@ class Params:
     commit: str = ""
     #: **测试级别**（交付时申报；`scope` 已被 raise 的跨线/本线自决占用，故另名）
     test_scope: str = ""
+    #: **DBA 迁移要求**（挂到条目上；动库条目定稿时必填——见 `rule_migration_req`）
+    migration_req: str = ""
+    #: **该条目被判定为含迁移件**（CLI 从绑定 §迁移 的 dir × 白名单算出；
+    #: 判据在 validators，信号只负责"要不要查"）
+    needs_migration_req: bool = False
     gate_cmd: str = ""
     gate_exit: int = 0
     evidence_path: str = ""
@@ -479,6 +485,9 @@ def apply(  # noqa: C901 - 动词分派本身就是一个 switch，拆开反而�
     if verb == "define":
         merged = _merge_params(task, p)
         rej = rule_3_four_elements(merged)
+        if rej:
+            return _reject(new, ts, verb, task_id, actor, expect_ver, rid, rej, task=task)
+        rej = rule_migration_req(merged, p.needs_migration_req)
         if rej:
             return _reject(new, ts, verb, task_id, actor, expect_ver, rid, rej, task=task)
         if p.constraints:
@@ -906,11 +915,14 @@ def _do_raise(
         task.kind = Kind.T
         task.status = TaskState.DEFINED
         task.owner = ""
+        task.migration_req = p.migration_req
         missing = []
         if not task.whitelist:
             missing.append("白名单")
         if not task.acceptance:
             missing.append("验收标准")
+        if p.needs_migration_req and not task.migration_req:
+            missing.append("DBA 迁移要求（含迁移件的条目，DBA 先行）")
         if missing:
             return _reject(
                 new, ts, "raise", "", actor, expect_ver, rid,
@@ -1138,6 +1150,8 @@ def _merge_params(task: Task, p: Params) -> Task:
         t.deps = p.deps
     if p.title:
         t.title = p.title
+    if p.migration_req:
+        t.migration_req = p.migration_req
     return t
 
 
@@ -1199,6 +1213,8 @@ def _apply_effects(task: Task, verb: str, actor: Actor, p: Params, ts: str) -> N
             task.title = p.title
         if p.whitelist is not None:
             task.whitelist = p.whitelist
+        if p.migration_req:
+            task.migration_req = p.migration_req
         if p.frozen is not None:
             task.frozen = p.frozen
         if p.acceptance is not None:

@@ -163,7 +163,7 @@ def test_ops_lane_dispatch_on_registered() -> None:
     assert ("dispatch", "OPS-1") in acts
     # 已认领（有 owner）就不重复派
     s.tasks["OPS-1"].owner = "ops"
-    assert not [a for a in plan_role(s, Role.OPS, "OPS")]
+    assert not list(plan_role(s, Role.OPS, "OPS"))
 
 
 def test_dba_lane_review_on_migrations_and_dispatch() -> None:

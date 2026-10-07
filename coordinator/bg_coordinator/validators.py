@@ -482,3 +482,24 @@ def constraint_violations(
                     "确需迁移 **另立条目**（dba 评审 ＋ ops 窗口），不在本条里做"
                 )
     return out
+
+
+def rule_migration_req(task: Task, needs: bool) -> Rejection | None:
+    """**动库的开发，DBA 先行**（2026-10-06 用户定）。
+
+    判据：含迁移件的条目（`needs` 由调用方按"白名单 × 绑定 §迁移 的 dir"算出），
+    定稿时必须挂一份 **DBA 迁移要求**（`task.migration_req`）——
+    表结构/索引/锁影响/回填与降级/窗口建议；小迁移可以是一句口径。
+
+    为什么放在定稿闸而不是评审时：dev 先做 ⇒ schema 形状与索引全是 dev 拍脑袋，
+    评审打回就是一轮返工；要求先行 ⇒ 评审从"看设计"变成"核对实现 == 要求"。
+    """
+    if not needs or task.migration_req.strip():
+        return None
+    return Rejection(
+        Code.E_INCOMPLETE,
+        f"{task.id} 含迁移件，定稿时必须有 **DBA 迁移要求**（DBA 先行）",
+        id=task.id,
+        owner=task.definer or task.owner,
+        hint="先找 dba 出要求（表结构/索引/锁评估/回填与降级），用 --migration-req 挂到条目上",
+    )

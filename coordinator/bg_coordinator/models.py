@@ -250,6 +250,10 @@ class Task:
     #: 例：`zero_migration`（本条判定零迁移；确需迁移须另立 dba 评审＋ops 窗口条目）。
     #: 未知约束**报缺口**（声明了却没人能核 ⇒ 暴露，不许静默算过）。
     constraints: list[str] = field(default_factory=list)
+    #: **DBA 迁移要求**（2026-10-06 用户定：动库的开发，DBA 先行）：
+    #: 含迁移件的条目定稿时必须挂一份——表结构/索引/锁影响/回填与降级/窗口建议；
+    #: 小迁移可以是一句口径，大迁移（大表 DDL、回填）必须完整。
+    migration_req: str = ""
 
     deps: list[str] = field(default_factory=list)
     owner: str = ""
@@ -288,6 +292,7 @@ class Task:
             "scope": self.scope,
             "doc_sync": list(self.doc_sync),
             "constraints": list(self.constraints),
+            "migration_req": self.migration_req,
             "category": self.category,
             "deps": list(self.deps),
             "owner": self.owner,
@@ -324,6 +329,7 @@ class Task:
             scope=d.get("scope", ""),
             doc_sync=list(d.get("doc_sync", [])),
             constraints=list(d.get("constraints", [])),
+            migration_req=d.get("migration_req", ""),
             category=d.get("category", ""),
             deps=list(d.get("deps", [])),
             owner=d.get("owner", ""),

@@ -299,3 +299,39 @@ def test_idle_grant_is_flagged_but_fresh_or_terminal_is_not() -> None:
     # 终态持证由 E_GRANT_AFTER_DONE 管，空转不重复点
     g.state.tasks["T-D-1"].status = TaskState.ACCEPTED
     assert not [a for a in audit(g.state, clock=now) if a.code == Code.E_SUBAGENT_IDLE]
+
+
+def test_migration_entry_requires_dba_req_at_define() -> None:
+    """**DBA 先行**（2026-10-06 用户定）：含迁移件的条目，定稿时必须挂 DBA 迁移要求。"""
+    from bg_coordinator.engine import Params, State, apply
+    from bg_coordinator.errors import Code
+    from bg_coordinator.models import AcceptanceItem, AcceptanceType, Actor, Kind, Line, Role, Task
+    from bg_coordinator.validators import rule_migration_req
+
+    def _pm() -> Actor:
+        return Actor(role=Role.PM, name="pm-D", line=Line.D)
+
+    # 判据本体
+    t = Task(id="T-D-1", kind=Kind.T, line="D")
+    assert rule_migration_req(t, needs=True) is not None
+    assert rule_migration_req(t, needs=False) is None
+    t.migration_req = "加索引 idx_x（锁评估：online）"
+    assert rule_migration_req(t, needs=True) is None
+
+    # define 路径（真动词）
+    s = budgeted(State())
+    from bg_coordinator.models import TaskState as _TS
+
+    s.tasks["R-D-1"] = Task(id="R-D-1", kind=Kind.R, line="D", owner="pm-D",
+                            status=_TS.ANALYZING)
+    p = Params(whitelist=["alembic/versions/**"], frozen=[],
+               acceptance=[AcceptanceItem(type=AcceptanceType.CLOSURE, desc="入口 → 可观测")],
+               needs_migration_req=True)
+    r = apply(s, "define", "R-D-1", _pm(), params=p)
+    assert not r.ok and r.rejection.code == Code.E_INCOMPLETE
+    assert "DBA 迁移要求" in r.rejection.message
+
+    p.migration_req = "加索引 idx_x（锁评估：online）"
+    r2 = apply(r.state, "define", "R-D-1", _pm(), params=p)
+    assert r2.ok, r2.rejection
+    assert r2.state.tasks["R-D-1"].migration_req.startswith("加索引")

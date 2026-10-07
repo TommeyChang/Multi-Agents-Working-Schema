@@ -88,6 +88,11 @@ def plan_role(state: State, role: Role, line: str, now: float = 0.0) -> list[Act
             ):
                 out.append(Action("review", t.id,
                                   f"白名单触及 {mig_dir}——评审即入库（review）"))
+            elif mig_dir and t.status == TaskState.DEFINED and not t.migration_req and any(
+                w.lstrip("./").startswith(mig_dir) for w in (t.whitelist or [])
+            ):
+                out.append(Action("review", t.id,
+                                  "已定稿含迁移件但**缺 DBA 迁移要求**（存量）——先补要求再评审"))
     elif role is Role.COMMANDER:
         from .models import LeaseState
 
