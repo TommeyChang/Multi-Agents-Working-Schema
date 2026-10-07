@@ -63,8 +63,10 @@ fi
 echo "[watch] $(date -Is) seq ${LAST_SEQ} → ${NOW_SEQ}"
 "$PY" -m bg_coordinator.cli "${ROOT_ARGS[@]+"${ROOT_ARGS[@]}"}" report
 if [ -n "$ROLE" ]; then
-  echo "--- 可认领（${ROLE}）---"
-  "$PY" -m bg_coordinator.cli "${ROOT_ARGS[@]+"${ROOT_ARGS[@]}"}" ready --role-name "$ROLE" || true
+  # 用调度器的角色计划面（全角色通用：TL 的认领面、PO 的定级/仲裁面、
+  # PM 的 intake 面、commander 的回收面）——ready 只覆盖 TL 的 claim-dev 那一角。
+  echo "--- 下一步（${ROLE}，调度器）---"
+  "$PY" -m bg_coordinator.cli "${ROOT_ARGS[@]+"${ROOT_ARGS[@]}"}" schedule --role "$ROLE" || true
 fi
 
 # 只有确认输出了，才推进游标
