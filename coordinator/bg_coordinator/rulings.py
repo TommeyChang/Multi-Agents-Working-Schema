@@ -42,6 +42,8 @@ RULINGS: tuple[tuple[str, str, str], ...] = (
     # —— 终态条目必须销账（2026-10-06，收窄版：只点终态）——**曾丢过一次**（提交信息说登记了、
     #    文件里却没有；台账查不出自己的行被删），补回
     ("终态条目必须销账", "rules/SUBAGENT.md", "coordinator/bg_coordinator/audit.py"),
+    # —— 会话锚：开工立 goal、只放指针不放内容（2026-10-06）
+    ("goal 只写条目号", ".dsh/skills/subagent-dispatch/SKILL.md", TEXT),
     # —— 可复用子代理预热启动、公共信息预置、续派只给增量（2026-10-06）
     ("开工即启动", "rules/SUBAGENT.md", TEXT),
     # —— 开子代理仅限 PO 与 TL（2026-10-06，仅限 MAWS；**撤销** 10-04 的 dev→dev 例外）

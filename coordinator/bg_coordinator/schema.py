@@ -204,6 +204,7 @@ BINDING_FIELDS: tuple[tuple[str, str, str], ...] = (
 #: 只读动词：不改状态，因此**不需要角色闸**（谁都能查）。
 READ_VERBS: tuple[str, ...] = (
     "ready",
+    "schedule",  # 调度器：只算不动的计划面
     "trace",
     "why",
     "audit",
