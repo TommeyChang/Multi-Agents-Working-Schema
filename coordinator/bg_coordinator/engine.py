@@ -88,6 +88,8 @@ class Params:
     #: **该条目被判定为含迁移件**（CLI 从绑定 §迁移 的 dir × 白名单算出；
     #: 判据在 validators，信号只负责"要不要查"）
     needs_migration_req: bool = False
+    #: **目标仓路径**（验收时跑闭环 cmd 用；CLI 从 --repo 带进来，不给就不跑）
+    repo_path: str = ""
     gate_cmd: str = ""
     gate_exit: int = 0
     evidence_path: str = ""
@@ -586,6 +588,12 @@ def apply(  # noqa: C901 - 动词分派本身就是一个 switch，拆开反而�
         rej = validate_acceptance(task)
         if rej:
             return _reject(new, ts, verb, task_id, actor, expect_ver, rid, rej, task=task)
+        if p.repo_path:
+            from .validators import rule_closure_executable
+
+            rej = rule_closure_executable(task, p.repo_path)
+            if rej:
+                return _reject(new, ts, verb, task_id, actor, expect_ver, rid, rej, task=task)
 
     # --- 第三层：真正落地 ---
     before = _snapshot(task)

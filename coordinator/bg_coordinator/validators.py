@@ -503,3 +503,44 @@ def rule_migration_req(task: Task, needs: bool) -> Rejection | None:
         owner=task.definer or task.owner,
         hint="先找 dba 出要求（表结构/索引/锁评估/回填与降级），用 --migration-req 挂到条目上",
     )
+
+
+#: 闭环断言单条执行的超时（秒）
+CLOSURE_CMD_TIMEOUT = 300.0
+
+
+def rule_closure_executable(task: Task, repo: str) -> Rejection | None:
+    """**带 `cmd` 的闭环必须可执行**（2026-10-06 用户定，TDD 兜底）。
+
+    闭环项的 `desc` 是「入口动作 → 可观测反应」的成文断言，`cmd` 是它的
+    **可执行形态**——dev 的第一步就该把它跑成失败测试（先红后绿）。
+    验收（accept）时在目标仓里把带 cmd 的闭环**真跑一遍**，退出码不等于
+    `expect_exit`（默认 0）⇒ 拒。没给仓 ⇒ 不判（判不了不当罪名）。
+
+    为什么放在验收而不是定稿：定稿时代码还不存在，闭环测试**本来就是红的**
+    （TDD 的第一步）；能要求它绿的时刻只有验收。
+    """
+    import subprocess
+
+    fails: list[str] = []
+    for item in task.acceptance:
+        if item.type != AcceptanceType.CLOSURE or not item.cmd.strip():
+            continue
+        try:
+            r = subprocess.run(
+                item.cmd, shell=True, cwd=repo, capture_output=True, text=True,
+                timeout=CLOSURE_CMD_TIMEOUT,
+            )
+            if r.returncode != item.expect_exit:
+                fails.append(f"`{item.cmd}` 退出 {r.returncode} ≠ 预期 {item.expect_exit}")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            fails.append(f"`{item.cmd}` 执行失败：{exc}")
+    if fails:
+        return Rejection(
+            Code.E_UNMET,
+            f"{task.id} 闭环断言未通过：{'；'.join(fails)}",
+            id=task.id,
+            owner=task.acceptor or task.definer,
+            hint="闭环命令必须在目标仓里跑通——先修实现，再验收",
+        )
+    return None

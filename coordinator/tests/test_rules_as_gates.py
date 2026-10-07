@@ -363,3 +363,38 @@ def test_test_tier_slot_caps_full_and_domain() -> None:
     d3 = acquire_lease(d2.state, klass="test-domain", holder="c", db_name="domain",
                        pid=3, ttl=600, clock=now)
     assert not d3.ok, "第三张 domain 没排队（上限 2 失效）"
+
+
+def test_closure_cmd_must_pass_at_accept(tmp_path) -> None:
+    """带 cmd 的闭环必须可执行（TDD 兜底）：验收时真跑，退出码不符 ⇒ 拒。"""
+    from bg_coordinator.engine import Params, State, apply
+    from bg_coordinator.errors import Code
+    from bg_coordinator.models import (
+        AcceptanceItem, AcceptanceType, Actor, Evidence, Kind, Line, Role, Task, TaskState,
+    )
+
+    def _pm() -> Actor:
+        return Actor(role=Role.PM, name="pm-D", line=Line.D)
+
+    def _mk(cmd: str) -> State:
+        s = budgeted(State())
+        s.tasks["T-D-1"] = Task(
+            id="T-D-1", kind=Kind.T, line="D", status=TaskState.VERIFIED, definer="pm-D",
+            acceptance=[AcceptanceItem(type=AcceptanceType.CLOSURE, desc="入口 → 可观测", cmd=cmd)],
+            evidence=[Evidence(round=1, commit="abc", gate_cmd="pytest -q", gate_exit=0,
+                               evidence_path=str(tmp_path / "g.log"))],
+        )
+        (tmp_path / "g.log").write_text("green\n", encoding="utf-8")
+        return s
+
+    # 闭环命令失败 ⇒ 拒
+    r = apply(_mk("exit 1"), "accept", "T-D-1", _pm(), params=Params(repo_path=str(tmp_path)))
+    assert not r.ok and r.rejection.code == Code.E_UNMET and "闭环断言未通过" in r.rejection.message
+
+    # 闭环命令通过 ⇒ 过
+    r2 = apply(_mk("exit 0"), "accept", "T-D-1", _pm(), params=Params(repo_path=str(tmp_path)))
+    assert r2.ok, r2.rejection
+
+    # 不给仓 ⇒ 不跑（判不了不当罪名）
+    r3 = apply(_mk("exit 1"), "accept", "T-D-1", _pm(), params=Params())
+    assert r3.ok, r3.rejection

@@ -347,16 +347,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return _write_verb(args, "verify", Params())
 
 
+def cmd_accept(args: argparse.Namespace) -> int:
+    return _write_verb(args, "accept", Params(repo_path=getattr(args, "repo", "") or ""))
+
+
 def cmd_reverify(args: argparse.Namespace) -> int:
     """返工。**必须给原因**——空串不算给了。"""
     if not (args.reason or "").strip():
         print("reverify 必须给 --reason（缺什么、错在哪、按什么判据）", file=sys.stderr)
         return 2
     return _write_verb(args, "reverify", Params(reason=args.reason))
-
-
-def cmd_accept(args: argparse.Namespace) -> int:
-    return _write_verb(args, "accept", Params())
 
 
 def cmd_block(args: argparse.Namespace) -> int:

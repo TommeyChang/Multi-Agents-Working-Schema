@@ -15,10 +15,16 @@ description: 条目从登记到验收的九步生命周期：每步谁做、前�
 | `claim-dev` | TL | 已定稿且**就绪** | 未批预算 ⇒ 拒（先 `coord quota --line <线> --budget N`） |
 | `start` → `deliver` | TL（认领人） | — | deliver 只记证据，**不产生 ✅** |
 | `verify` | **TL／commander** | 已交付 | 证据形式与可读性先过（不是 PM——别记错） |
-| `accept` | PM | **已验证** | 实质验收；**功能条目必须有闭环路径**（`closure` 验收项） |
+| `accept` | PM | **已验证** | 实质验收；**功能条目必须有闭环路径**；带 `cmd` 的闭环会被**真跑**（退出码不符 ⇒ 拒） |
 
 **合入的位置**：`merge-request` 放行 delivered／verified／accepted 三态——先验收再合并**不再被堵**（2026-10-05 实测抓到的堵点）；但**验收了却没合**会被 `coord audit` 点名（`E_ACCEPTED_UNMERGED`）。
 | `block`／`unblock` | 相关角色 | 非终态 | 须给理由；`blocked_from` 记录回退目标 |
+
+## TDD 节奏（2026-10-06 用户定）
+
+验收标准就是 spec 的可执行部分：**闭环项在 define 时就把 `cmd` 写上**
+（如 `pytest tests/<域>/test_x.py::test_入口流程 -q`）——dev 的第一步是把它跑成
+**失败测试（先红后绿）**，跑偏在写入面就被拦住，而不是等复核。
 
 ## 常见拒码怎么解
 - `E_INCOMPLETE`：四要素缺项（无白名单不成条目）；`E_NO_CLOSURE_PATH`：补 `--acceptance 'closure:…'` 或声明 `no_closure_path`。
