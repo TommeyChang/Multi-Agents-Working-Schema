@@ -59,6 +59,13 @@ def plan_role(state: State, role: Role, line: str, now: float = 0.0) -> list[Act
         queued = [m for m in state.merges.values() if m.state == MergeState.QUEUED]
         if queued and not running:
             out.append(Action("merge-next", queued[0].merge_id, "合并队列有队首且无在办合并"))
+            held = any(
+                ls.klass == "test-domain" and ls.state.value == "active"
+                for ls in state.leases.values()
+            )
+            if not held:
+                out.append(Action("acquire", "test-domain",
+                                  "合并后域级复跑 ⇒ 先领测试档（池上限 quota.slot_max，满则排队）"))
     elif role is Role.PO:
         # PO 的两个真职责：**定优先级**（不定优先级 ⇒ 永远不就绪，谁也接不走）
         # 与**阻塞仲裁**（block/unblock）。这两件不派出去，口子就一直开着。

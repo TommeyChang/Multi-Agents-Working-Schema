@@ -165,6 +165,9 @@ check "gate 出裁决（受影响面）" bash -c \
      --log-dir '$SANDBOX/ev' --json > '$SANDBOX/gate.json' 2>/dev/null; rc=\$?; [ \$rc -eq 0 ] || [ \$rc -eq 1 ]"
 check "gate 证据已落盘"       bash -c "ls '$SANDBOX'/ev/gate-affected-*.log >/dev/null 2>&1"
 check "gate 裁决形状正确"     bash -c "grep -q '\"scope\": \"affected\"' '$SANDBOX/gate.json' && grep -q '\"legs\"' '$SANDBOX/gate.json'"
+check "测试档：领取 ＋ 第二张必排队" bash -c   "'$PY' -m bg_coordinator.cli acquire --class test-full --holder smoke --db-name full --pid \$\$ --ttl 600 >/dev/null \
+   && '$PY' -m bg_coordinator.cli acquire --class test-full --holder other --db-name full \
+        --pid 999 --ttl 600 2>&1 | grep -q '排队\|队位'"
 check "gate 出裁决（全量口径）" bash -c \
   "'$PY' '$PKG_ROOT/tools/gate.py' --target '$REPO' --python '$PY' --scope full \
      --log-dir '$SANDBOX/ev' >/dev/null 2>&1; rc=\$?; [ \$rc -eq 0 ] || [ \$rc -eq 1 ]"

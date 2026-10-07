@@ -316,12 +316,35 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     target = target_repo(args.target)
+    scope = args.scope or ("domain" if args.domain else "affected")
+    if scope in {"domain", "full"}:
+        # **测试档**：重级别是整机级资源，跑之前必须领档（2026-10-06 用户定）。
+        # 有状态根才查——没有就不猜（不拦，但写明没核）。
+        import os as _os
+
+        root = _os.environ.get("BG_COORDINATOR_ROOT", "")
+        if root:
+            from bg_coordinator.storage import Store
+
+            state = Store(root=root).load_state(strict=False)
+            klass = f"test-{scope}"
+            held = [
+                ls for ls in state.leases.values()
+                if ls.klass == klass and ls.state.value == "active"
+            ]
+            if not held:
+                print(
+                    f"[测试档] 跑 {scope} 级必须先领档：没有 {klass} 在手租约。\n"
+                    f"  先：`coord acquire --class {klass} --holder <你> --db-name {scope} --pid $$ "
+                    f"--ttl 3600`（满则排队——这正是防资源崩的那层）",
+                    file=sys.stderr,
+                )
+                return 2
     if not (target / "tests").is_dir():
         print(f"目标仓不像代码仓（缺 tests/）：{target}", file=sys.stderr)
         return 2
     python = pick_python(target, args.python)
 
-    scope = args.scope or ("domain" if args.domain else "affected")
     args.scope = scope
     try:
         plan, note = build_plan(args, target, python)

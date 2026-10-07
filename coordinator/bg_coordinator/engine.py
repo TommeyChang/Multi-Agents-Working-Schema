@@ -1373,7 +1373,11 @@ def acquire_lease(
     _sweep_reclaimable(new, clock)
     _drop_expired_waiters(new, clock)
 
-    active = [ls for ls in new.leases.values() if ls.state == LeaseState.ACTIVE]
+    # 配额**按租约类**算：test-full 的在手不该挤占 test-domain 的位
+    active = [
+        ls for ls in new.leases.values()
+        if ls.state == LeaseState.ACTIVE and ls.klass == klass
+    ]
     full = new.quota.enabled and _quota_full(new.quota, klass, active)
 
     if not full:
@@ -1872,6 +1876,9 @@ def mark_reclaimed(state: State, lease_id: str, mdl_failed: bool = False) -> Res
 
 
 def _quota_of(quota: Quota, klass: str) -> int:
+    # 按类上限优先（测试档分级：full=1、domain=2——见 Quota.slot_max 注释）
+    if klass in getattr(quota, "slot_max", {}):
+        return quota.slot_max[klass]
     return quota.bg_db_max if klass == "bg_db" else quota.test_slot
 
 
@@ -1907,9 +1914,12 @@ def advance_queue(state: State, clock: float) -> list[str]:
     granted: list[str] = []
     _drop_expired_waiters(state, clock)
     while state.waiters:
-        active = [ls for ls in state.leases.values() if ls.state == LeaseState.ACTIVE]
         head = state.waiters[0]
         klass = str(head.get("klass", ""))
+        active = [
+            ls for ls in state.leases.values()
+            if ls.state == LeaseState.ACTIVE and ls.klass == klass
+        ]
         if state.quota.enabled and _quota_full(state.quota, klass, active):
             break
         state.waiters.pop(0)

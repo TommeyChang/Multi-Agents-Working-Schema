@@ -335,3 +335,31 @@ def test_migration_entry_requires_dba_req_at_define() -> None:
     r2 = apply(r.state, "define", "R-D-1", _pm(), params=p)
     assert r2.ok, r2.rejection
     assert r2.state.tasks["R-D-1"].migration_req.startswith("加索引")
+
+
+def test_test_tier_slot_caps_full_and_domain() -> None:
+    """测试档（2026-10-06 用户定）：full 同时只能一个、domain 两个——满则排队。"""
+    import time as _time
+
+    from bg_coordinator.engine import State, acquire_lease
+    from bg_coordinator.readiness import Quota
+
+    now = _time.time()
+    s = State()
+    s.quota = Quota(enabled=True)
+    r1 = acquire_lease(s, klass="test-full", holder="a", db_name="full", pid=1,
+                       ttl=600, clock=now)
+    assert r1.ok, r1.rejection
+    # 第二张 full ⇒ 满（上限 1）⇒ 排队
+    r2 = acquire_lease(r1.state, klass="test-full", holder="b", db_name="full",
+                       pid=2, ttl=600, clock=now)
+    assert not r2.ok and "排队" in (r2.rejection.message + str(r2.detail))
+
+    d1 = acquire_lease(r1.state, klass="test-domain", holder="a", db_name="domain",
+                       pid=1, ttl=600, clock=now)
+    d2 = acquire_lease(d1.state, klass="test-domain", holder="b", db_name="domain",
+                       pid=2, ttl=600, clock=now)
+    assert d1.ok and d2.ok
+    d3 = acquire_lease(d2.state, klass="test-domain", holder="c", db_name="domain",
+                       pid=3, ttl=600, clock=now)
+    assert not d3.ok, "第三张 domain 没排队（上限 2 失效）"

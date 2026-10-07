@@ -50,6 +50,9 @@ class Quota:
     bg_db_max: int = 20
     bg_db_disk_mb: int = 4096
     test_slot: int = 4
+    #: **按租约类的槽位上限**（2026-10-06：测试档分级——full 是整机级资源，
+    #: 同时只能一个；domain 级两个）。没列到的类走 `test_slot` 兜底。
+    slot_max: dict[str, int] = field(default_factory=lambda: {"test-full": 1, "test-domain": 2})
 
     def budget_of(self, line: str) -> int | None:
         """某线的在办上限。**None = 未给这条线批预算。**"""
@@ -66,6 +69,7 @@ class Quota:
             "bg_db_max": self.bg_db_max,
             "bg_db_disk_mb": self.bg_db_disk_mb,
             "test_slot": self.test_slot,
+            "slot_max": dict(self.slot_max),
         }
 
     @staticmethod
@@ -80,6 +84,10 @@ class Quota:
             bg_db_max=int(d.get("bg_db_max", 20)),  # type: ignore[arg-type]
             bg_db_disk_mb=int(d.get("bg_db_disk_mb", 4096)),  # type: ignore[arg-type]
             test_slot=int(d.get("test_slot", 4)),  # type: ignore[arg-type]
+            slot_max=(
+                {str(k): int(v) for k, v in dict(d.get("slot_max", {})).items()}
+                or {"test-full": 1, "test-domain": 2}
+            ),
         )
 
     def set_line(self, line: str, budget: int | None) -> None:
