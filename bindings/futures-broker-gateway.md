@@ -18,6 +18,8 @@
 
 ## 二、线别与工作面
 
+> 每线的 `ddd` 类为**草案**（2026-10-06，按 DDD 标准：核心／支撑／通用），待 PO 裁定；判据：`test_binding::test_every_line_declares_a_ddd_class`。
+
 **（口径来源与确认状态）** 下表据**条目号前缀**（`T-A-*`／`T-C-*`／`T-D-*`／`T-E-*`／`T-ACL-*`／`OPS-*`）
 与工程看板文件（`todo/lines/*.md`）、以及门禁的路径→域映射**推定**。
 **请工程方校正**——校正后只改这份文件，体系侧一个字都不用动。
@@ -163,13 +165,13 @@
   "project": "futures-broker-gateway",
   "version": 1,
   "lines": {
-    "A": {"name": "auth", "workface": ["auth/", "tests/auth/", "docs/AUTH_DOMAIN.md"]},
-    "B": {"name": "notification", "workface": ["notification/", "tests/notification/", "docs/NOTIFICATION.md"]},
-    "C": {"name": "data_access", "workface": ["data_access/", "tests/data_access/", "docs/DATA_ACCESS.md"]},
-    "D": {"name": "领域与组合根", "workface": ["broker_gateway/", "tests/broker_gateway/", "docs/BROKER_GATEWAY_*.md"]},
-    "E": {"name": "基建（含 DFS）", "workface": ["dfs/", "scripts/tools/", "tests/infra/"]},
-    "ACL": {"name": "权限与端点矩阵", "workface": ["broker_gateway/acl/", "tests/broker_gateway/acl/"]},
-    "OPS": {"name": "运维", "workface": ["deploy/", "scripts/ops/", "scripts/dba/"]}
+    "A": {"name": "auth", "ddd": "支撑", "workface": ["auth/", "tests/auth/", "docs/AUTH_DOMAIN.md"]},
+    "B": {"name": "notification", "ddd": "支撑", "workface": ["notification/", "tests/notification/", "docs/NOTIFICATION.md"]},
+    "C": {"name": "data_access", "ddd": "支撑", "workface": ["data_access/", "tests/data_access/", "docs/DATA_ACCESS.md"]},
+    "D": {"name": "领域与组合根", "ddd": "核心", "workface": ["broker_gateway/", "tests/broker_gateway/", "docs/BROKER_GATEWAY_*.md"]},
+    "E": {"name": "基建（含 DFS）", "ddd": "通用", "workface": ["dfs/", "scripts/tools/", "tests/infra/"]},
+    "ACL": {"name": "权限与端点矩阵", "ddd": "通用", "workface": ["broker_gateway/acl/", "tests/broker_gateway/acl/"]},
+    "OPS": {"name": "运维", "ddd": "通用", "workface": ["deploy/", "scripts/ops/", "scripts/dba/"]}
   },
   "gate": {
     "entry": "tools/gate.py",

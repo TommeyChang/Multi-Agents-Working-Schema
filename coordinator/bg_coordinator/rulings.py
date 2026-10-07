@@ -42,6 +42,8 @@ RULINGS: tuple[tuple[str, str, str], ...] = (
     # —— 终态条目必须销账（2026-10-06，收窄版：只点终态）——**曾丢过一次**（提交信息说登记了、
     #    文件里却没有；台账查不出自己的行被删），补回
     ("终态条目必须销账", "rules/SUBAGENT.md", "coordinator/bg_coordinator/audit.py"),
+    # —— 分线按 DDD 标准：核心／支撑／通用必须分开（2026-10-06）
+    ("分线按照 DDD 标准", ".dsh/skills/line-splitting/SKILL.md", "coordinator/tests/test_binding.py"),
     # —— 公共开发树暂不支持（2026-10-06 用户定；理由见 WORKSPACE-details §八·五）
     ("暂不支持", "rules/WORKSPACE-details.md", TEXT),
     # —— 会话锚：开工立 goal、只放指针不放内容（2026-10-06）

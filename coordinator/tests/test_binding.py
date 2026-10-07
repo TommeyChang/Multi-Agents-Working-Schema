@@ -331,3 +331,25 @@ def test_diverged_shadow_is_a_gap(tmp_path: Path) -> None:
         b.bindings_dir = orig
     assert info["shadowed"][0]["diverged"] is True
     assert any("不一致" in g for g in info["gaps"])
+
+
+def test_every_line_declares_a_ddd_class() -> None:
+    """分线按 DDD 标准（2026-10-06 用户定）：绑定里每条线必须标 `核心`／`支撑`／`通用`。
+
+    判据是字段级的：新开一条线没标类 ⇒ 红——**三类必须分开**靠的是登记面的约束，
+    不是靠人记得。
+    """
+    from bg_coordinator.binding import load as load_binding
+    from bg_coordinator.testplan import locate_testplan
+
+    path = locate_testplan(None)
+    assert path is not None, "找不到绑定文件"
+    data, err = load_binding(path)
+    assert data, err
+    lines = data.get("lines")
+    assert isinstance(lines, dict) and lines, "绑定缺 lines 块"
+    bad = {
+        k: v.get("ddd") for k, v in lines.items()
+        if not isinstance(v, dict) or v.get("ddd") not in {"核心", "支撑", "通用"}
+    }
+    assert not bad, f"这些线没标 DDD 类（或值非法）：{bad}"
