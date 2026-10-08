@@ -38,7 +38,15 @@ def _register(
     # 前序命令（如 init）的 stdout 也在同一缓冲区里 —— 只取**最后一行**这个 JSON
     last = [ln for ln in captured.out.splitlines() if ln.strip()][-1]
     payload = json.loads(last)
-    return str(payload["detail"]["id"])
+    tid = str(payload["detail"]["id"])
+    if line == "D":
+        # D 线 = 核心域 ⇒ define 前要 domain-expert 会签（新闸）；测试面统一在这里签
+        title = kw.get("title", "")
+        c = _run(root, "confirm", "--role", "domain-expert:de", "--line", line,
+                 "--title", title, "--said", "de 口径")
+        assert c == 0, title
+        capsys.readouterr()  # 沥干：confirm 的输出非 JSON，会污染后续逐行 json.loads
+    return tid
 
 
 @pytest.fixture
