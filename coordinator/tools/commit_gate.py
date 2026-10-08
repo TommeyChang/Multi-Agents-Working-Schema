@@ -119,6 +119,10 @@ from bg_coordinator.validators import (  # noqa: E402
 BLOCK = "BLOCK"
 WARN = "WARN"
 
+#: **投影面**：由 `coord publish` 现算、不该入库的路径前缀（本体系的视图约定，
+#: 不是工程落点——所以写死在这里而不是绑定里）
+PROJECTION_PATHS = ("todo/lines/", "reports/")
+
 #: 状态根环境变量名（与协调器 CLI 同源：`bg_coordinator.cli` 也认它）。
 _ROOT_ENV = "BG_COORDINATOR_ROOT"
 
@@ -188,6 +192,14 @@ def judge(
         )
 
     for path in files:
+        # **投影面不入库**（2026-10-06 用户定）：看板与报告是协调器事件面的
+        # **现算视图**（`coord publish`），提交它们等于把投影当真相——
+        # 双源就是这么来的。真相在事件面；定版/发版才归档快照（冻结不回改）。
+        if path.startswith(PROJECTION_PATHS):
+            warns.append(Finding(
+                WARN, path,
+                "投影面（看板/报告由协调器现算）不该入库——事件面是真相，不入库不提交",
+            ))
         if path in frozen_hits:
             blocked.append(
                 Finding(BLOCK, path, "命中不动清单（frozen）——本条目明令不得改动该文件")

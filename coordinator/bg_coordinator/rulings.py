@@ -42,6 +42,8 @@ RULINGS: tuple[tuple[str, str, str], ...] = (
     # —— 终态条目必须销账（2026-10-06，收窄版：只点终态）——**曾丢过一次**（提交信息说登记了、
     #    文件里却没有；台账查不出自己的行被删），补回
     ("终态条目必须销账", "rules/SUBAGENT.md", "coordinator/bg_coordinator/audit.py"),
+    # —— 看板与变更落系统状态不落文档，定版/发版才归档快照（2026-10-06）
+    ("投影面不落库", "rules/WORKSPACE-details.md", "coordinator/tools/commit_gate.py"),
     # —— 启动参考面＝调度报告＋本线线板，不扫仓（2026-10-06）
     ("启动参考面", "AGENT.md", "coordinator/tests/test_render.py"),
     # —— domain-expert：核心域口径 owner，define 会签（2026-10-06）

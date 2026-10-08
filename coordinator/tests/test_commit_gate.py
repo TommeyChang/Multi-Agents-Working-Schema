@@ -98,7 +98,18 @@ def _register(root: Path, *, line: str = "D", title: str = "界内闸样例") ->
     return str(json.loads(last)["detail"]["id"])
 
 
+def _state_title(root: Path, tid: str) -> str:
+    code, out, err = _cli(root, "--json", "show", tid)
+    assert code == 0, err
+    return str(json.loads(out)["title"])  # show --json 是整段 JSON（多行），不是逐行
+
+
 def _define(root: Path, tid: str, *, whitelist: list[str], frozen: list[str]) -> None:
+    # D 线 = 核心域 ⇒ define 前要 domain-expert 会签（标题须与登记一致）
+    title = _state_title(root, tid)
+    code, _, err = _cli(root, "confirm", "--role", "domain-expert:de", "--line", "D",
+                        "--title", title, "--said", "de 口径")
+    assert code == 0, err
     argv = ["define", "--id", tid, "--role", "pm:pm-D:D"]
     for item in whitelist:
         argv += ["--whitelist", item]
@@ -620,6 +631,9 @@ def test_unknown_constraint_is_rejected_at_define(
     assert _cli(root, "init")[0] == 0
     tid = _register(root)
     assert _cli(root, "claim-analyze", "--id", tid, "--role", "pm:pm-D:D")[0] == 0
+    # D 线 = 核心域 ⇒ 先会签，才能测到约束闸（否则被会签闸先拦）
+    assert _cli(root, "confirm", "--role", "domain-expert:de", "--line", "D",
+                "--title", "界内闸样例", "--said", "de 口径")[0] == 0
     code, _out, err = _cli(
         root, "define", "--id", tid, "--role", "pm:pm-D:D",
         "--whitelist", "a/**", "--acceptance", "test:t", "--constraint", "别乱改",
@@ -661,3 +675,22 @@ def test_single_entry_commit_does_not_warn(tmp_path: Path, capsys) -> None:
     code2 = _run(root, tid, repo)
     out2 = capsys.readouterr().out
     assert code2 == 0 and "条目号" not in out2
+
+
+def test_projection_paths_warn_not_block(tmp_path: Path, capsys) -> None:
+    """投影面不入库（2026-10-06 用户定）：看板/报告是现算视图，提交它们 ⇒ WARN 不阻断。"""
+    root = tmp_path / "coordinator"
+    tid = _new_task(root, whitelist=["todo/**", "reports/**"], frozen=[])
+    repo = _init_repo(tmp_path)
+    _stage(repo, "todo/lines/D.md")
+
+    code = _run(root, tid, repo)
+    out = capsys.readouterr().out
+    assert code == 0, f"投影面只 WARN 不 BLOCK：{out}"
+    assert "投影面" in out
+
+    # 普通路径不报
+    _stage(repo, "data_access/x.py")  # 不在白名单 ⇒ BLOCK，但不该有投影面 WARN
+    code2 = _run(root, tid, repo)
+    out2 = capsys.readouterr().out
+    assert code2 == 1 and "投影面" not in out2.split("BLOCK")[0]
