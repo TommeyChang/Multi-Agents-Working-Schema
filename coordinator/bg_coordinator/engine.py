@@ -90,6 +90,9 @@ class Params:
     needs_migration_req: bool = False
     #: **目标仓路径**（验收时跑闭环 cmd 用；CLI 从 --repo 带进来，不给就不跑）
     repo_path: str = ""
+    #: **该条目被判定为核心域条目**（CLI 从绑定 lines[线].ddd 算出；
+    #: 核心域条目 define 需要 domain-expert 会签——见 `_domain_confirm_gate`）
+    needs_domain_confirm: bool = False
     gate_cmd: str = ""
     gate_exit: int = 0
     evidence_path: str = ""
@@ -492,6 +495,10 @@ def apply(  # noqa: C901 - 动词分派本身就是一个 switch，拆开反而�
         rej = rule_migration_req(merged, p.needs_migration_req)
         if rej:
             return _reject(new, ts, verb, task_id, actor, expect_ver, rid, rej, task=task)
+        if p.needs_domain_confirm:
+            rej = _domain_confirm_gate(new, merged, ts)
+            if rej:
+                return _reject(new, ts, verb, task_id, actor, expect_ver, rid, rej, task=task)
         if p.constraints:
             from .validators import unknown_constraints
 
@@ -796,6 +803,31 @@ def _do_register(
         snapshot=_full_snapshot(task),
     )
     return Result(ok=True, state=new, event=ev, detail={"id": task_id})
+
+
+def _domain_confirm_gate(state: State, task: Task, ts: str) -> Rejection | None:
+    """**核心域条目 define 需 domain-expert 会签**（2026-10-06 用户定）。
+
+    复用 `Confirmation` 机制（内容绑定 ＋ 一次性 ＋ 会过期 ＋ 原话留痕），
+    区别只在持票人：必须是 `domain-expert:*` 签发的、且与（线, 标题）匹配。
+    确认在 define 时**消费**（一次性）——会签一次管一次定稿。
+    """
+    digest = need_digest(str(task.line), task.title)
+    for c in live_confirmations(state, digest=digest, now=time.time()):
+        if c.by.startswith("domain-expert:"):
+            c.used_by = f"define:{task.id}"
+            return None
+    return Rejection(
+        Code.E_NO_DOMAIN_CONFIRM,
+        f"{task.id} 是核心域条目，define 前需 domain-expert 会签",
+        id=task.id,
+        owner=task.definer or task.owner,
+        hint=(
+            "先请 domain-expert 确认：`coord confirm --role domain-expert:<名> "
+            f"--line {task.line} --title 「{task.title}」 --said 「<领域口径>」；"
+            "支撑域归各线 PM、通用域无领域确认（确认强度＝复杂度×代价）"
+        ),
+    )
 
 
 def _do_raise(

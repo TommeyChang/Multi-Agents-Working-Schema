@@ -19,6 +19,7 @@ class Role(StrEnum):
     DEV = "dev"
     OPS = "ops"
     DBA = "dba"
+    DOMAIN_EXPERT = "domain-expert"
 
 
 #: 内置线码——**只是初始集合，不是封闭集合**。

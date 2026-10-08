@@ -161,6 +161,17 @@ ROLES: tuple[RoleSpec, ...] = (
         workface=("本线工作面（见工程绑定 §线别与工作面）",),
     ),
     RoleSpec(
+        key="domain-expert",
+        form="independent",
+        reports_to="user",
+        # **用户授权的领域代理**（2026-10-06 用户定）：核心域线的口径 owner。
+        # 确认强度与"领域复杂度×出错代价"成正比——只绑核心域线，
+        # 支撑域归各线 PM（术语对账兜）、通用域无领域确认（技术闸兜）。
+        dispatch=(),
+        brief="核心域口径 owner：术语表与领域正确性；不裁优先级、不写条目、不替用户终裁",
+        workface=("核心域术语表", "核心域条目会签", "领域歧义裁定"),
+    ),
+    RoleSpec(
         key=Role.OPS.value,
         form="independent",
         reports_to="user",

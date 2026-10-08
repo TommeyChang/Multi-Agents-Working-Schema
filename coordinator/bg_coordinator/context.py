@@ -102,6 +102,9 @@ ROLE_READS: dict[str, tuple[tuple[str, tuple[str, ...] | None], ...]] = {
         ("rules/COORDINATION.md", ("二", "三", "四", "九")),
         ("rules/WORKSPACE.md", ("二", "四", "八", "九")),
     ),
+    "domain-expert": (
+        ("rules/COORDINATION.md", ("六",)),  # 确认机制（会签就长在这上面）
+    ),
 }
 
 #: 每个角色"要读的面"上限（字符）：`AGENT.md` ＋ 角色文件 ＋ 它读的各节。
@@ -113,6 +116,8 @@ ROLE_READ_MAX: dict[str, int] = {
     # 2026-10-05 +400：同上（po 派 pm，派单口径在它面上）
     # 2026-10-06 +100：SUBAGENT §七 加「预热」（开工即启动／接活才领凭证）——po 是派单方，必读
     "po": 15400,
+    # domain-expert：AGENT ＋ 角色文件 ＋ COORDINATION §六（确认机制）≈ 8.6k
+    "domain-expert": 9000,
     "pm": 14000,
     "tech-lead": 25300,
     # dev 也要读派单面（它可再开 dev）——SUBAGENT §二 写明累计口径后 +200

@@ -100,6 +100,12 @@ def plan_role(state: State, role: Role, line: str, now: float = 0.0) -> list[Act
             ):
                 out.append(Action("review", t.id,
                                   "已定稿含迁移件但**缺 DBA 迁移要求**（存量）——先补要求再评审"))
+    elif role is Role.DOMAIN_EXPERT:
+        # 核心域条目 define 前置：ANALYZING 的 ⇒ 待你会签（confirm）
+        for t in _by_priority(tasks):
+            if t.status == TaskState.ANALYZING and _is_core_line(t.line):
+                out.append(Action("confirm", t.id,
+                                  "核心域条目待你会签（define 前置；确认一次性，会签一次管一次定稿）"))
     elif role is Role.COMMANDER:
         from .models import LeaseState
 
@@ -110,6 +116,20 @@ def plan_role(state: State, role: Role, line: str, now: float = 0.0) -> list[Act
             if m.state == MergeState.REJECTED:
                 out.append(Action("merge-conflict", m.merge_id, "冲突待转 TL 动作项"))
     return out
+
+
+def _is_core_line(line: str) -> bool:
+    """该线是不是核心域线（绑定 lines[线].ddd == "核心"；取不到 ⇒ False，不猜）。"""
+    try:
+        from .binding import load as load_binding
+        from .testplan import locate_testplan
+
+        path = locate_testplan(None)
+        data, _err = load_binding(path) if path else ({}, "")
+        entry = ((data or {}).get("lines") or {}).get(str(line))
+        return isinstance(entry, dict) and entry.get("ddd") == "核心"
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _migrations_dir() -> str:
@@ -130,5 +150,6 @@ def plan(state: State, line: str, now: float = 0.0) -> dict[str, list[Action]]:
     """全角色计划——`coord schedule` 的数据面。"""
     return {
         role.value: plan_role(state, role, line, now)
-        for role in (Role.PO, Role.PM, Role.TECH_LEAD, Role.COMMANDER, Role.OPS, Role.DBA)
+        for role in (Role.PO, Role.PM, Role.TECH_LEAD, Role.COMMANDER, Role.OPS, Role.DBA,
+                     Role.DOMAIN_EXPERT)
     }

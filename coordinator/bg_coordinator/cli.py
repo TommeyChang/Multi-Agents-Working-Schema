@@ -297,6 +297,32 @@ def _needs_migration_req(repo: Path | None, whitelist: list[str]) -> bool:
     )
 
 
+def _needs_domain_confirm(repo, line: str) -> bool:
+    """该线是不是**核心域线**（绑定 lines[线].ddd == "核心"）——信号只负责"要不要查"。"""
+    if not line:
+        return False
+    try:
+        from .binding import load as _load_binding
+        from .testplan import locate_testplan
+
+        path = locate_testplan(repo)
+        data, _err = _load_binding(path) if path else ({}, "")
+        entry = ((data or {}).get("lines") or {}).get(line)
+        return isinstance(entry, dict) and entry.get("ddd") == "核心"
+    except Exception:  # noqa: BLE001 —— 取不到 ⇒ 不查（判不了不当罪名）
+        return False
+
+
+def _task_line(args) -> str:
+    """define 的线码在条目上（register 时定的），只读取出来算信号。"""
+    try:
+        st = _store(args)
+        t = st.load_state(strict=False).tasks.get(args.id)
+        return str(t.line) if t else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def cmd_define(args: argparse.Namespace) -> int:
     frozen = _flat(args.frozen)
     whitelist = _flat(args.whitelist)
@@ -311,6 +337,10 @@ def cmd_define(args: argparse.Namespace) -> int:
         needs_migration_req=_needs_migration_req(
             Path(getattr(args, "repo", "") or "") if getattr(args, "repo", "") else None,
             whitelist,
+        ),
+        needs_domain_confirm=_needs_domain_confirm(
+            Path(getattr(args, "repo", "") or "") if getattr(args, "repo", "") else None,
+            _task_line(args),
         ),
     )
     return _write_verb(args, "define", p)

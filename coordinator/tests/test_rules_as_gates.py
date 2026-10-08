@@ -370,7 +370,15 @@ def test_closure_cmd_must_pass_at_accept(tmp_path) -> None:
     from bg_coordinator.engine import Params, State, apply
     from bg_coordinator.errors import Code
     from bg_coordinator.models import (
-        AcceptanceItem, AcceptanceType, Actor, Evidence, Kind, Line, Role, Task, TaskState,
+        AcceptanceItem,
+        AcceptanceType,
+        Actor,
+        Evidence,
+        Kind,
+        Line,
+        Role,
+        Task,
+        TaskState,
     )
 
     def _pm() -> Actor:
@@ -398,3 +406,58 @@ def test_closure_cmd_must_pass_at_accept(tmp_path) -> None:
     # 不给仓 ⇒ 不跑（判不了不当罪名）
     r3 = apply(_mk("exit 1"), "accept", "T-D-1", _pm(), params=Params())
     assert r3.ok, r3.rejection
+
+
+def test_core_domain_define_requires_domain_expert_signoff() -> None:
+    """核心域条目 define 需 domain-expert 会签（2026-10-06 用户定）。"""
+    import time as _time
+
+    from bg_coordinator.engine import Params, State, apply, grant_confirm
+    from bg_coordinator.errors import Code
+    from bg_coordinator.models import (
+        AcceptanceItem,
+        AcceptanceType,
+        Actor,
+        Kind,
+        Line,
+        Role,
+        Task,
+        TaskState,
+    )
+
+    def _pm() -> Actor:
+        return Actor(role=Role.PM, name="pm-B", line=Line.B)
+
+    def _seed() -> State:
+        s = budgeted(State())
+        s.tasks["R-B-1"] = Task(id="R-B-1", kind=Kind.R, line="B", title="结算口径调整",
+                                owner="pm-B", status=TaskState.ANALYZING)
+        return s
+
+    def _params() -> Params:
+        return Params(whitelist=["broker_gateway/**"], frozen=[],
+                      acceptance=[AcceptanceItem(type=AcceptanceType.CLOSURE, desc="x")],
+                      needs_domain_confirm=True)
+
+    # ① 没会签 ⇒ 拒
+    r = apply(_seed(), "define", "R-B-1", _pm(), params=_params())
+    assert not r.ok and r.rejection.code == Code.E_NO_DOMAIN_CONFIRM
+
+    # ② 非 domain-expert 签的 ⇒ 照样拒
+    g = grant_confirm(_seed(), line="B", title="结算口径调整", by="pm:pm-B",
+                      said="用户原话", clock=_time.time())
+    r2 = apply(g.state, "define", "R-B-1", _pm(), params=_params())
+    assert not r2.ok and r2.rejection.code == Code.E_NO_DOMAIN_CONFIRM
+
+    # ③ domain-expert 会签 ⇒ 过，且一次性（再 define 还得重新签）
+    g2 = grant_confirm(_seed(), line="B", title="结算口径调整", by="domain-expert:de",
+                       said="结算按 T+0 口径", clock=_time.time())
+    r3 = apply(g2.state, "define", "R-B-1", _pm(), params=_params())
+    assert r3.ok, r3.rejection
+
+    # ④ 非核心域信号 ⇒ 不需要
+    r4 = apply(_seed(), "define", "R-B-1", _pm(),
+               params=Params(whitelist=["a/**"], frozen=[],
+                             acceptance=[AcceptanceItem(type=AcceptanceType.CLOSURE, desc="x")],
+                             needs_domain_confirm=False))
+    assert r4.ok, r4.rejection

@@ -65,6 +65,7 @@ else
   echo "  [FAIL] register 未返回编号"; fail=$((fail + 1))
 fi
 check "claim-analyze"  coord claim-analyze --id "$TID" --role pm:pm-D:D
+check "domain-expert 会签（核心域 D 线）" coord confirm --role domain-expert:de --line D --title 冒烟 --said "冒烟口径"
 check "define"         coord define --id "$TID" --role pm:pm-D:D \
                          --whitelist 'data_access/**' --frozen main.py \
                          --acceptance 'closure:入口动作 → 系统可观测反应' \

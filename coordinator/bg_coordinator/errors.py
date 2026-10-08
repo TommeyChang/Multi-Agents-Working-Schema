@@ -28,6 +28,7 @@ class Code(StrEnum):
     E_NUMBER_INFLIGHT = "E_NUMBER_INFLIGHT"  # 同族已有在飞的占号：迁移件必须串行落地
     E_UNAUTHORIZED_DISPATCH = "E_UNAUTHORIZED_DISPATCH"  # 子代理授权：无凭证／超上限／越权派单
     E_NO_USER_CONFIRM = "E_NO_USER_CONFIRM"  # commander 发需求却没有用户的显式确认
+    E_NO_DOMAIN_CONFIRM = "E_NO_DOMAIN_CONFIRM"  # 核心域条目 define 缺 domain-expert 会签
     E_CONFIRM_INVALID = "E_CONFIRM_INVALID"  # 确认记录不合用（重复／过期／已消费／内容不符）
     E_NO_USER_SAID = "E_NO_USER_SAID"  # 确认没带用户原话——那它就没有证据面
     E_NO_CLOSURE_PATH = "E_NO_CLOSURE_PATH"  # 功能条目没有闭环路径（只有模块单测）
