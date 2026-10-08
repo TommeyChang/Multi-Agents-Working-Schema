@@ -210,9 +210,10 @@ def render_report(state: State, clock: float = 0.0) -> str:
     out.append("\n## 三、在办\n\n")
     flying = [t for t in state.tasks.values() if t.in_flight()]
     if flying:
-        out.append("| 条目 | 线 | 认领人 | 状态 | 轮次 |\n|---|---|---|---|---|\n")
+        out.append("| 条目 | 线 | 认领人 | 状态 | 轮次 | 标题 |\n|---|---|---|---|---|---|\n")
         for t in sorted(flying, key=lambda x: (x.line, x.id)):
-            out.append(f"| {t.id} | {t.line} | {t.owner or '—'} | {t.status} | {t.round} |\n")
+            title = (t.title or "").replace("|", "／")[:30]
+            out.append(f"| {t.id} | {t.line} | {t.owner or '—'} | {t.status} | {t.round} | {title} |\n")
     else:
         out.append("（无）\n")
 
